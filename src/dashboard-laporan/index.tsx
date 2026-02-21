@@ -1,6 +1,7 @@
 "use client";
 import { menusConstants } from "@/app/constants/constants";
 import { useState } from "react";
+import BatangTubuhPage from "./contents/BatangTubuhContent/BatangTubuhContent";
 
 export default function Dashboard() {
   const menus = menusConstants;
@@ -41,14 +42,18 @@ export default function Dashboard() {
       </aside>
 
       <main className="flex-1 p-10">
-        <div className="rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
-          <h1 className="mb-4 text-xl font-semibold text-gray-800">
-            {activeMenu}
-          </h1>
-          <p className="text-sm text-gray-500">
-            Konten untuk menu {activeMenu} akan ditampilkan di sini.
-          </p>
-        </div>
+        {activeMenu === "Batang Tubuh" ? (
+          <BatangTubuhPage />
+        ) : (
+          <div className="rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
+            <h1 className="mb-4 text-xl font-semibold text-gray-800">
+              {activeMenu}
+            </h1>
+            <p className="text-sm text-gray-500">
+              Konten untuk menu {activeMenu} akan ditampilkan di sini.
+            </p>
+          </div>
+        )}
       </main>
     </div>
   );
