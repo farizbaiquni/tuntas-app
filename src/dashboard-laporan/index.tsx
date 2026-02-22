@@ -1,7 +1,6 @@
 "use client";
 import { menusConstants } from "@/app/constants/constants";
 import { useState, useCallback } from "react";
-import BatangTubuhContent from "./contents/BatangTubuhContent/BatangTubuhContent";
 import LampiranUtamaPage from "./contents/LampiranUtamaContent";
 import {
   DokumenLaporan,
@@ -11,6 +10,7 @@ import {
   LampiranPendukung,
   MenuDahboard,
 } from "@/app/_types/type";
+import BatangTubuhContent from "./contents/BatangTubuhContent/BatangTubuhContent";
 
 // ─── Initial State ────────────────────────────────────────────────────────────
 
