@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export default function BatangTubuhPage() {
+export default function BatangTubuhContent() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 

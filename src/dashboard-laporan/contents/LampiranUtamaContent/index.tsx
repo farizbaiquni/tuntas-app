@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import UploadPdfModal from "./modals/UploadPdfModal";
+import UploadLampiranUtamaModal from "./modals/UploadLampiranModal";
 
 type FileItem = {
   id: number;
@@ -10,7 +10,7 @@ type FileItem = {
   pages: number;
 };
 
-export default function LampiranPendukungPage() {
+export default function LampiranPendukungContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -188,7 +188,7 @@ export default function LampiranPendukungPage() {
         </div>
       </div>
 
-      <UploadPdfModal
+      <UploadLampiranUtamaModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={(newFile) => {

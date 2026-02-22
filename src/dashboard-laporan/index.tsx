@@ -1,7 +1,7 @@
 "use client";
 import { menusConstants } from "@/app/constants/constants";
 import { useState } from "react";
-import BatangTubuhPage from "./contents/BatangTubuhContent/BatangTubuhContent";
+import BatangTubuhContent from "./contents/BatangTubuhContent/BatangTubuhContent";
 import LampiranUtamaPage from "./contents/LampiranUtamaContent";
 
 export default function Dashboard() {
@@ -46,7 +46,7 @@ export default function Dashboard() {
         {(() => {
           switch (activeMenu) {
             case "Batang Tubuh":
-              return <BatangTubuhPage />;
+              return <BatangTubuhContent />;
 
             case "Lampiran Utama":
               return <LampiranUtamaPage />;

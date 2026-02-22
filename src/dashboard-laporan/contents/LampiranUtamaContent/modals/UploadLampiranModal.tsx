@@ -34,7 +34,11 @@ type Props = {
   }) => void;
 };
 
-export default function UploadPdfModal({ isOpen, onClose, onSave }: Props) {
+export default function UploadLampiranUtamaModal({
+  isOpen,
+  onClose,
+  onSave,
+}: Props) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewFocus, setIsPreviewFocus] = useState(false);

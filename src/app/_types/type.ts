@@ -17,9 +17,9 @@ export enum JenisLaporan {
 }
 
 export enum StatusDokumenLaporan {
-  BELUM_DIBUAT = "belum-dibuat", // gunakan kebab-case konsisten
+  BELUM_DIBUAT = "belum-dibuat",
   DIBUAT = "dibuat",
-  DRAFT = "draft", // pertimbangkan tambahan status
+  DRAFT = "draft",
   DIAJUKAN = "diajukan",
   DISAHKAN = "disahkan",
 }
@@ -89,14 +89,6 @@ export interface DokumenLaporan {
   createdBy?: string;
   updatedBy?: string;
 }
-
-export interface SubbabCalkType {
-  id: string;
-  subbab: string;
-  judul: string;
-  halamanMulai: number;
-}
-
 // Helper types
 export type DokumenLaporanInput = Omit<
   DokumenLaporan,
