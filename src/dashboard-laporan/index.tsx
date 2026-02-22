@@ -2,6 +2,7 @@
 import { menusConstants } from "@/app/constants/constants";
 import { useState } from "react";
 import BatangTubuhPage from "./contents/BatangTubuhContent/BatangTubuhContent";
+import LampiranUtamaPage from "./contents/LampiranUtamaContent";
 
 export default function Dashboard() {
   const menus = menusConstants;
@@ -41,19 +42,28 @@ export default function Dashboard() {
         </ul>
       </aside>
 
-      <main className="flex-1 p-10">
-        {activeMenu === "Batang Tubuh" ? (
-          <BatangTubuhPage />
-        ) : (
-          <div className="rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
-            <h1 className="mb-4 text-xl font-semibold text-gray-800">
-              {activeMenu}
-            </h1>
-            <p className="text-sm text-gray-500">
-              Konten untuk menu {activeMenu} akan ditampilkan di sini.
-            </p>
-          </div>
-        )}
+      <main className="flex-1 bg-gray-50 p-8">
+        {(() => {
+          switch (activeMenu) {
+            case "Batang Tubuh":
+              return <BatangTubuhPage />;
+
+            case "Lampiran Utama":
+              return <LampiranUtamaPage />;
+
+            default:
+              return (
+                <div className="rounded-2xl border border-gray-200 bg-white p-10 shadow-sm">
+                  <h1 className="mb-3 text-xl font-semibold text-gray-800">
+                    {activeMenu}
+                  </h1>
+                  <p className="text-sm text-gray-500">
+                    Konten untuk menu {activeMenu} akan ditampilkan di sini.
+                  </p>
+                </div>
+              );
+          }
+        })()}
       </main>
     </div>
   );
