@@ -24,7 +24,6 @@ export enum StatusDokumenLaporan {
   DISAHKAN = "disahkan",
 }
 
-// Types untuk sub-structures
 export interface FooterConfig {
   text: string;
   width: number;
@@ -45,7 +44,7 @@ export interface BabCalk {
   bab: string;
   judul: string;
   halamanMulai: number;
-  subbabs: SubbabCalk[]; // tidak perlu optional jika array bisa kosong []
+  subbabs: SubbabCalk[];
 }
 
 export interface LampiranPendukung {
@@ -53,7 +52,7 @@ export interface LampiranPendukung {
   urutan: number;
   namaFileAsli: string;
   namaFileDiStorageLokal: string;
-  fileUrl: string; // lebih baik dari File object
+  fileUrl: string;
   judul: string;
   jumlahTotalLembar: number;
 }
@@ -61,15 +60,20 @@ export interface LampiranPendukung {
 export interface LampiranUtama {
   id: string;
   urutan: number;
+  /** URL PDF yang sudah diberi footer (ditampilkan & disimpan) */
   fileUrl: string;
+  /** URL PDF asli tanpa footer — digunakan untuk re-apply footer saat urutan berubah */
+  rawFileUrl: string;
   namaFileDiStorageLokal: string;
+  /** Ukuran file dalam format human-readable, misal "2.34 MB" */
+  ukuranFile: string;
   romawiLampiran: string;
   judulPembatasLampiran: string;
   footer: FooterConfig;
   jumlahHalaman: number;
   jumlahTotalLembar: number;
   isCALK: boolean;
-  babs: BabCalk[]; // tidak perlu optional
+  babs: BabCalk[];
 }
 
 export interface DokumenLaporan {
@@ -77,19 +81,17 @@ export interface DokumenLaporan {
   jenisLaporan: JenisLaporan;
   tahun: number;
   nomor: number | null;
-  tanggalPengesahan: string | null; // ISO 8601 string
+  tanggalPengesahan: string | null;
   status: StatusDokumenLaporan;
   batangTubuh: string | null;
   lampirans: LampiranUtama[];
   lampiransPendukung: LampiranPendukung[];
-
-  // Metadata
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
   updatedBy?: string;
 }
-// Helper types
+
 export type DokumenLaporanInput = Omit<
   DokumenLaporan,
   "id" | "createdAt" | "updatedAt"

@@ -1,10 +1,16 @@
 "use client";
-
 import { useState } from "react";
 
-export default function BatangTubuhContent() {
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+interface BatangTubuhContentProps {
+  value: string | null;
+  onChange: (value: string | null) => void;
+}
+
+export default function BatangTubuhContent({
+  value,
+  onChange,
+}: BatangTubuhContentProps) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(value);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -15,13 +21,14 @@ export default function BatangTubuhContent() {
       return;
     }
 
-    setFile(selectedFile);
-    setPreviewUrl(URL.createObjectURL(selectedFile));
+    const url = URL.createObjectURL(selectedFile);
+    setPreviewUrl(url);
+    onChange(url); // naik ke parent (Dashboard)
   };
 
   const handleDelete = () => {
-    setFile(null);
     setPreviewUrl(null);
+    onChange(null); // naik ke parent (Dashboard)
   };
 
   return (
@@ -88,12 +95,11 @@ export default function BatangTubuhContent() {
             </label>
 
             {/* File Info */}
-            {file && (
+            {previewUrl && (
               <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
                 <div className="font-medium text-gray-700">✔ File siap</div>
-                <div className="mt-1 truncate">{file.name}</div>
-                <div className="mt-1 text-gray-500">
-                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                <div className="mt-1 truncate text-gray-500">
+                  File PDF sudah diunggah
                 </div>
               </div>
             )}
@@ -103,7 +109,6 @@ export default function BatangTubuhContent() {
               <button className="flex-1 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700">
                 Simpan
               </button>
-
               <button
                 onClick={handleDelete}
                 className="flex-1 rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
