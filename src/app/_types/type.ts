@@ -39,12 +39,31 @@ export interface SubbabCalk {
   halamanMulai: number;
 }
 
+export interface LampiranCalk {
+  id: string;
+  nama: string;
+  /** Halaman ke berapa (1-based, relatif dalam PDF CALK) lampiran ini dimulai */
+  halamanMulai: number;
+  /**
+   * Berapa halaman lampiran ini — halaman-halaman ini TIDAK diberi nomor footer.
+   * Diabaikan jika sampaiAkhir = true.
+   */
+  jumlahHalaman: number;
+  /**
+   * Jika true, lampiran ini dianggap mulai dari halamanMulai sampai halaman
+   * terakhir PDF — user tidak perlu input jumlahHalaman.
+   */
+  sampaiAkhir: boolean;
+}
+
 export interface BabCalk {
   id: string;
   bab: string;
   judul: string;
   halamanMulai: number;
   subbabs: SubbabCalk[];
+  /** Lampiran di dalam bab CALK ini yang tidak diberi nomor halaman footer */
+  lampiranCalk: LampiranCalk[];
 }
 
 export interface LampiranPendukung {
@@ -92,8 +111,5 @@ export interface DokumenLaporan {
   updatedBy?: string;
 }
 
-export type DokumenLaporanInput = Omit<
-  DokumenLaporan,
-  "id" | "createdAt" | "updatedAt"
->;
+export type DokumenLaporanInput = Omit<DokumenLaporan, "id" | "createdAt" | "updatedAt">;
 export type DokumenLaporanUpdate = Partial<DokumenLaporanInput>;

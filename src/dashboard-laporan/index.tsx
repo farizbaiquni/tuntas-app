@@ -1,7 +1,7 @@
 "use client";
 import { menusConstants } from "@/app/constants/constants";
 import { useState, useCallback } from "react";
-import LampiranUtamaPage from "./contents/LampiranUtamaContent";
+import LampiranUtamaContent from "./contents/LampiranUtamaContent/LampiranUtamaContent";
 import {
   DokumenLaporan,
   JenisLaporan,
@@ -11,6 +11,9 @@ import {
   MenuDahboard,
 } from "@/app/_types/type";
 import BatangTubuhContent from "./contents/BatangTubuhContent/BatangTubuhContent";
+import GenerateContent from "./contents/GenerateContent/GenerateContent";
+import InformasiUmumContent from "./contents/InformasiUmumContent/InformasiUmumContent";
+import LampiranPendukungContent from "./contents/LampiranPendukungContent/LampiranPendukungContent";
 
 // ─── Initial State ────────────────────────────────────────────────────────────
 
@@ -76,6 +79,11 @@ export default function Dashboard() {
     [updateDokumen],
   );
 
+  const handleStatusChange = useCallback(
+    (status: StatusDokumenLaporan) => updateDokumen("status", status),
+    [updateDokumen],
+  );
+
   // ─── Batang Tubuh ──────────────────────────────────────────────────────────
 
   const handleBatangTubuhChange = useCallback(
@@ -111,7 +119,7 @@ export default function Dashboard() {
       ...prev,
       lampirans: prev.lampirans
         .filter((l) => l.id !== id)
-        .map((l, i) => ({ ...l, urutan: i + 1 })), // reindex urutan
+        .map((l, i) => ({ ...l, urutan: i + 1 })),
       updatedAt: new Date().toISOString(),
     }));
   }, []);
@@ -163,19 +171,13 @@ export default function Dashboard() {
     }));
   }, []);
 
-  // ─── Status & Global Actions ───────────────────────────────────────────────
-
-  const handleStatusChange = useCallback(
-    (status: StatusDokumenLaporan) => updateDokumen("status", status),
-    [updateDokumen],
-  );
+  // ─── Global Actions ────────────────────────────────────────────────────────
 
   const handleSave = useCallback(async () => {
     setIsSaving(true);
     try {
-      // TODO: ganti dengan API call Anda
       console.log("Saving dokumen:", dokumen);
-      await new Promise((r) => setTimeout(r, 1000)); // simulasi async
+      await new Promise((r) => setTimeout(r, 1000));
     } finally {
       setIsSaving(false);
     }
@@ -225,18 +227,34 @@ export default function Dashboard() {
       <main className="flex-1 bg-gray-50 p-8">
         {(() => {
           switch (activeMenu) {
+            case MenuDahboard.INFORMASI_UMUM:
+              return (
+                <InformasiUmumContent
+                  dokumen={dokumen}
+                  onJenisLaporanChange={handleJenisLaporanChange}
+                  onTahunChange={handleTahunChange}
+                  onNomorChange={handleNomorChange}
+                  onTanggalPengesahanChange={handleTanggalPengesahanChange}
+                  onStatusChange={handleStatusChange}
+                />
+              );
+
             case MenuDahboard.BATANG_TUBUH:
               return (
                 <BatangTubuhContent
                   value={dokumen.batangTubuh}
+                  jenisLaporan={dokumen.jenisLaporan}
                   onChange={handleBatangTubuhChange}
                 />
               );
 
             case MenuDahboard.LAMPIRAN_UTAMA:
               return (
-                <LampiranUtamaPage
+                <LampiranUtamaContent
                   lampirans={dokumen.lampirans}
+                  jenisLaporan={dokumen.jenisLaporan}
+                  tahun={dokumen.tahun}
+                  nomor={dokumen.nomor}
                   onAdd={handleAddLampiranUtama}
                   onUpdate={handleUpdateLampiranUtama}
                   onRemove={handleRemoveLampiranUtama}
@@ -246,33 +264,30 @@ export default function Dashboard() {
 
             case MenuDahboard.LAMPIRAN_PENDUKUNG:
               return (
-                // <LampiranPendukungPage
-                //   lampiransPendukung={dokumen.lampiransPendukung}
-                //   onAdd={handleAddLampiranPendukung}
-                //   onUpdate={handleUpdateLampiranPendukung}
-                //   onRemove={handleRemoveLampiranPendukung}
-                // />
-                <div className="rounded-2xl border border-gray-200 bg-white p-10 shadow-sm">
-                  <p className="text-sm text-gray-500">
-                    Lampiran Pendukung — coming soon
-                  </p>
-                </div>
+                <LampiranPendukungContent
+                  lampirans={dokumen.lampiransPendukung}
+                  onAdd={handleAddLampiranPendukung}
+                  onUpdate={handleUpdateLampiranPendukung}
+                  onRemove={handleRemoveLampiranPendukung}
+                  onReorder={(reordered) =>
+                    setDokumen((prev) => ({
+                      ...prev,
+                      lampiransPendukung: reordered,
+                    }))
+                  }
+                />
               );
 
             case MenuDahboard.GENERATE:
               return (
-                <div className="rounded-2xl border border-gray-200 bg-white p-10 shadow-sm">
-                  <h1 className="mb-4 text-xl font-semibold text-gray-800">
-                    Generate Dokumen
-                  </h1>
-                  <button
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-                  >
-                    {isSaving ? "Menyimpan..." : "Simpan & Generate"}
-                  </button>
-                </div>
+                <GenerateContent
+                  lampirans={dokumen.lampirans}
+                  lampiransPendukung={dokumen.lampiransPendukung} // ← tambahkan ini
+                  batangTubuh={dokumen.batangTubuh}
+                  jenisLaporan={dokumen.jenisLaporan}
+                  tahun={dokumen.tahun}
+                  nomor={dokumen.nomor}
+                />
               );
 
             default:

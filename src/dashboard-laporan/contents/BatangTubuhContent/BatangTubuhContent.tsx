@@ -1,34 +1,71 @@
 "use client";
 import { useState } from "react";
+import { JenisLaporan } from "@/app/_types/type";
 
 interface BatangTubuhContentProps {
   value: string | null;
+  jenisLaporan: JenisLaporan;
   onChange: (value: string | null) => void;
+}
+
+function getLabelBatangTubuh(jenisLaporan: JenisLaporan): {
+  judul: string;
+  sub: string;
+} {
+  switch (jenisLaporan) {
+    case JenisLaporan.RAPERDA:
+      return {
+        judul: "Batang Tubuh Raperda",
+        sub: "Rancangan Peraturan Daerah Kabupaten Kendal",
+      };
+    case JenisLaporan.PERDA:
+      return {
+        judul: "Batang Tubuh Perda",
+        sub: "Peraturan Daerah Kabupaten Kendal",
+      };
+    case JenisLaporan.SALINAN_PERDA:
+      return {
+        judul: "Batang Tubuh Salinan Perda",
+        sub: "Salinan Peraturan Daerah Kabupaten Kendal",
+      };
+    case JenisLaporan.RAPERBUP:
+      return {
+        judul: "Batang Tubuh Raperbup",
+        sub: "Rancangan Peraturan Bupati Kendal",
+      };
+    case JenisLaporan.PERBUP:
+      return { judul: "Batang Tubuh Perbup", sub: "Peraturan Bupati Kendal" };
+    case JenisLaporan.SALINAN_PERBUP:
+      return {
+        judul: "Batang Tubuh Salinan Perbup",
+        sub: "Salinan Peraturan Bupati Kendal",
+      };
+  }
 }
 
 export default function BatangTubuhContent({
   value,
+  jenisLaporan,
   onChange,
 }: BatangTubuhContentProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(value);
+  const { judul, sub } = getLabelBatangTubuh(jenisLaporan);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
-
     if (selectedFile.type !== "application/pdf") {
       alert("Hanya file PDF yang diperbolehkan.");
       return;
     }
-
     const url = URL.createObjectURL(selectedFile);
     setPreviewUrl(url);
-    onChange(url); // naik ke parent (Dashboard)
+    onChange(url);
   };
 
   const handleDelete = () => {
     setPreviewUrl(null);
-    onChange(null); // naik ke parent (Dashboard)
+    onChange(null);
   };
 
   return (
@@ -36,11 +73,9 @@ export default function BatangTubuhContent({
       <div className="mx-auto max-w-7xl">
         {/* ================= HEADER ================= */}
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-gray-800">
-            Batang Tubuh Raperda
-          </h1>
+          <h1 className="text-2xl font-semibold text-gray-800">{judul}</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Unggah dokumen PDF dan lakukan preview sebelum generate.
+            {sub} — unggah dokumen PDF dan lakukan preview sebelum generate.
           </p>
         </div>
 
@@ -56,7 +91,6 @@ export default function BatangTubuhContent({
               </p>
             </div>
 
-            {/* Drag & Drop Area */}
             <label className="group relative flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center transition hover:border-indigo-500 hover:bg-indigo-50">
               <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 transition group-hover:bg-indigo-200">
                 <svg
@@ -78,14 +112,12 @@ export default function BatangTubuhContent({
                   />
                 </svg>
               </div>
-
               <p className="text-sm font-medium text-gray-700">
                 Klik untuk upload atau drag & drop
               </p>
               <p className="mt-1 text-xs text-gray-500">
                 Format PDF • Maksimal 10MB
               </p>
-
               <input
                 type="file"
                 accept="application/pdf"
@@ -94,7 +126,6 @@ export default function BatangTubuhContent({
               />
             </label>
 
-            {/* File Info */}
             {previewUrl && (
               <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
                 <div className="font-medium text-gray-700">✔ File siap</div>
@@ -104,7 +135,6 @@ export default function BatangTubuhContent({
               </div>
             )}
 
-            {/* Buttons */}
             <div className="mt-6 flex gap-4">
               <button className="flex-1 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700">
                 Simpan
@@ -125,7 +155,6 @@ export default function BatangTubuhContent({
                 Preview Dokumen
               </h3>
             </div>
-
             <div className="bg-gray-300 p-4">
               {previewUrl ? (
                 <div className="overflow-hidden rounded-md border border-gray-400 shadow">
