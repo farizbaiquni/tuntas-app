@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import {
   ChevronUpIcon,
@@ -48,25 +48,27 @@ type FormErrors = Partial<Record<"dividerTitle" | "footerNote", string>>;
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
+// Rule 6.3 / 7.4: Hoist the numeral lookup table to module level — created once, never recreated.
+const ROMAN_MAP: [number, string][] = [
+  [1000, "M"],
+  [900, "CM"],
+  [500, "D"],
+  [400, "CD"],
+  [100, "C"],
+  [90, "XC"],
+  [50, "L"],
+  [40, "XL"],
+  [10, "X"],
+  [9, "IX"],
+  [5, "V"],
+  [4, "IV"],
+  [1, "I"],
+];
+
 function toRomawi(num: number): string {
-  const map: [number, string][] = [
-    [1000, "M"],
-    [900, "CM"],
-    [500, "D"],
-    [400, "CD"],
-    [100, "C"],
-    [90, "XC"],
-    [50, "L"],
-    [40, "XL"],
-    [10, "X"],
-    [9, "IX"],
-    [5, "V"],
-    [4, "IV"],
-    [1, "I"],
-  ];
   let result = "";
   let n = num;
-  for (const [v, s] of map) {
+  for (const [v, s] of ROMAN_MAP) {
     while (n >= v) {
       result += s;
       n -= v;
@@ -76,6 +78,7 @@ function toRomawi(num: number): string {
 }
 
 function formatFileSize(bytes: number): string {
+  // Rule 7.8: Early return for each size boundary — avoids evaluating lower branches.
   if (!bytes) return "0 B";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -146,22 +149,25 @@ export default function UploadLampiranUtamaModal({
 }: Props) {
   const isEditMode = !!editData;
 
+  // Rule 5.10: Lazy state initializers — the functions run only once on mount, not on re-renders.
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(
-    editData?.fileUrl ?? null,
+    () => editData?.fileUrl ?? null,
   );
   const [isPreviewFocus, setIsPreviewFocus] = useState(false);
   const [activeTab, setActiveTab] = useState<"upload" | "info" | "daftarisi">(
-    isEditMode ? "info" : "upload",
+    () => (isEditMode ? "info" : "upload"),
   );
   const [formInfo, setFormInfo] = useState<FormInfo>(() =>
     isEditMode ? lampiranToForm(editData!) : getDefaultForm(nextUrutan),
   );
   const [errors, setErrors] = useState<FormErrors>({});
   const [pdfPageCount, setPdfPageCount] = useState<number>(
-    editData?.jumlahHalaman ?? 0,
+    () => editData?.jumlahHalaman ?? 0,
   );
-  const [fileSize, setFileSize] = useState<string>(editData?.ukuranFile ?? "");
+  const [fileSize, setFileSize] = useState<string>(
+    () => editData?.ukuranFile ?? "",
+  );
   const [isReadingPdf, setIsReadingPdf] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -182,28 +188,41 @@ export default function UploadLampiranUtamaModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  // Rule 8.2: Store the latest onClose in a ref so the effect doesn't re-subscribe
+  // every time the parent re-renders and creates a new onClose reference.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (isPreviewFocus) setIsPreviewFocus(false);
-        else onClose();
+        else onCloseRef.current();
       }
     };
     if (isOpen) {
-      document.addEventListener("keydown", handler);
+      // Rule 4.2: Use passive listener — we never call preventDefault() in this handler,
+      // so marking it passive allows the browser to optimize scroll/input performance.
+      document.addEventListener("keydown", handler, { passive: true });
       document.body.style.overflow = "hidden";
     }
     return () => {
       document.removeEventListener("keydown", handler);
       document.body.style.overflow = "auto";
     };
-  }, [isOpen, isPreviewFocus, onClose]);
+    // Rule 5.6: Narrow deps — only re-subscribe when isOpen or isPreviewFocus changes,
+    // not when onClose identity changes (handled via ref above).
+  }, [isOpen, isPreviewFocus]);
 
   if (!isOpen) return null;
 
   // ── handlers ───────────────────────────────────────────────────────────────
 
+  // Rule 5.7: All interaction logic lives in the event handler — no bridging via state+effect.
   const handleFileChange = async (file: File | null) => {
+    // Rule 7.8: Early return for null file.
     if (!file) return;
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
@@ -312,6 +331,7 @@ export default function UploadLampiranUtamaModal({
   };
 
   const handleSave = async () => {
+    // Rule 7.8: Early return for missing file in add mode.
     if (!isEditMode && !selectedFile) return;
     const errs = validate(formInfo);
     if (Object.keys(errs).length > 0) {
@@ -405,7 +425,11 @@ export default function UploadLampiranUtamaModal({
         : "border-gray-200 focus:border-indigo-400 focus:ring-indigo-400"
     }`;
 
+  // Rule 5.3: Simple boolean expression with primitive result — not wrapped in useMemo.
   const isDisabled = (!isEditMode && !selectedFile) || isReadingPdf || isSaving;
+
+  // Rule 5.1: Derived boolean — computed during render with no extra state.
+  const hasErrors = Object.keys(errors).length > 0;
 
   // ── render ─────────────────────────────────────────────────────────────────
 
@@ -467,7 +491,7 @@ export default function UploadLampiranUtamaModal({
                 >
                   <InformationCircleIcon className="h-5 w-5" />
                   Informasi Lampiran
-                  {Object.keys(errors).length > 0 && (
+                  {hasErrors && (
                     <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500" />
                   )}
                 </button>
@@ -1238,7 +1262,7 @@ export default function UploadLampiranUtamaModal({
         {!isPreviewFocus && (
           <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50/80 px-8 py-5">
             <div className="flex items-center gap-2 text-sm">
-              {Object.keys(errors).length > 0 ? (
+              {hasErrors ? (
                 <>
                   <span className="h-2 w-2 rounded-full bg-red-500" />
                   <span className="text-red-500">

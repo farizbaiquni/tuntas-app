@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PDFDocument } from "pdf-lib";
 import { LampiranPendukung } from "@/app/_types/type";
 
@@ -16,6 +16,8 @@ interface UploadLampiranPendukungModalProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Rule 6.3 / 7.8: Module-level pure helpers — created once, never recreated.
+// Early return at each boundary avoids evaluating lower branches.
 function formatFileSize(bytes: number): string {
   if (!bytes) return "0 B";
   if (bytes < 1024) return `${bytes} B`;
@@ -53,10 +55,15 @@ export default function UploadLampiranPendukungModal({
 }: UploadLampiranPendukungModalProps) {
   const isEditMode = !!editData;
 
+  // Rule 5.10: Lazy state initializers — functions run only on mount, not on re-renders.
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(editData?.fileUrl ?? null);
-  const [judul, setJudul] = useState<string>(editData?.judul ?? "");
-  const [pageCount, setPageCount] = useState<number>(editData?.jumlahTotalLembar ?? 0);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(
+    () => editData?.fileUrl ?? null,
+  );
+  const [judul, setJudul] = useState<string>(() => editData?.judul ?? "");
+  const [pageCount, setPageCount] = useState<number>(
+    () => editData?.jumlahTotalLembar ?? 0,
+  );
   const [fileSize, setFileSize] = useState<string>("");
   const [isReadingPdf, setIsReadingPdf] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -78,25 +85,36 @@ export default function UploadLampiranPendukungModal({
     }
   }, [isOpen, editData]);
 
+  // Rule 8.2: Store latest onClose in a ref so the keyboard effect never needs to
+  // re-subscribe just because the parent re-created the onClose function reference.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   // Keyboard handler
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
-    document.addEventListener("keydown", handler);
+    // Rule 4.2: Passive listener — handler never calls preventDefault().
+    document.addEventListener("keydown", handler, { passive: true });
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", handler);
       document.body.style.overflow = "auto";
     };
-  }, [isOpen, onClose]);
+    // Rule 5.6: Narrow deps — onClose changes handled via ref, not re-subscription.
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   // ── File processing ──────────────────────────────────────────────────────
 
+  // Rule 5.7: All side effects in the event handler — no bridging via state+effect.
   const processFile = async (file: File) => {
+    // Rule 7.8: Early returns for validation failures before any state updates.
     if (file.type !== "application/pdf") {
       alert("Hanya file PDF yang diperbolehkan.");
       return;
@@ -121,7 +139,9 @@ export default function UploadLampiranPendukungModal({
     setIsReadingPdf(false);
   };
 
-  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
     if (file) await processFile(file);
   };
@@ -143,6 +163,7 @@ export default function UploadLampiranPendukungModal({
   // ── Save ─────────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
+    // Rule 7.8: Early returns for validation — avoids deep nesting.
     if (!judul.trim()) {
       setJudulError("Judul wajib diisi.");
       return;
@@ -160,8 +181,12 @@ export default function UploadLampiranPendukungModal({
             ...editData!,
             judul: judul.trim(),
             fileUrl: selectedFile ? fileUrl : editData!.fileUrl,
-            namaFileAsli: selectedFile ? selectedFile.name : editData!.namaFileAsli,
-            namaFileDiStorageLokal: selectedFile ? selectedFile.name : editData!.namaFileDiStorageLokal,
+            namaFileAsli: selectedFile
+              ? selectedFile.name
+              : editData!.namaFileAsli,
+            namaFileDiStorageLokal: selectedFile
+              ? selectedFile.name
+              : editData!.namaFileDiStorageLokal,
             jumlahTotalLembar: pageCount,
           }
         : {
@@ -181,7 +206,12 @@ export default function UploadLampiranPendukungModal({
     }
   };
 
-  const canSave = (isEditMode || !!selectedFile) && !isReadingPdf && !isSaving && judul.trim().length > 0;
+  // Rule 5.3: Simple boolean expression with primitive result — computed during render.
+  const canSave =
+    (isEditMode || !!selectedFile) &&
+    !isReadingPdf &&
+    !isSaving &&
+    judul.trim().length > 0;
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -405,7 +435,7 @@ export default function UploadLampiranPendukungModal({
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-6 py-3">
               <h4 className="text-sm font-semibold text-gray-600">Preview Dokumen</h4>
-              {previewUrl && (
+              {previewUrl !== null && (
                 <a
                   href={previewUrl}
                   target="_blank"
@@ -421,7 +451,7 @@ export default function UploadLampiranPendukungModal({
             </div>
 
             <div className="flex-1 overflow-hidden bg-gray-200 p-4">
-              {previewUrl ? (
+              {previewUrl !== null ? (
                 <iframe
                   src={previewUrl}
                   className="h-full w-full rounded-xl border border-gray-300 bg-white shadow-sm"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { JenisLaporan, LampiranUtama } from "@/app/_types/type";
 import UploadLampiranUtamaModal from "./modals/UploadLampiranModal";
@@ -20,41 +20,39 @@ interface LampiranUtamaPageProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getLabelPeraturan(jenisLaporan: JenisLaporan): string {
-  switch (jenisLaporan) {
-    case JenisLaporan.RAPERDA:
-      return "RANCANGAN PERATURAN DAERAH KABUPATEN KENDAL";
-    case JenisLaporan.PERDA:
-    case JenisLaporan.SALINAN_PERDA:
-      return "PERATURAN DAERAH KABUPATEN KENDAL";
-    case JenisLaporan.RAPERBUP:
-      return "RANCANGAN PERATURAN BUPATI KENDAL";
-    case JenisLaporan.PERBUP:
-    case JenisLaporan.SALINAN_PERBUP:
-      return "PERATURAN BUPATI KENDAL";
-  }
-}
+// Rule 6.3 / 7.4: Hoist static lookup maps to module level.
+// Rule 7.11: Use Map/Record for O(1) lookups instead of switch-case evaluated on every call.
+const LABEL_PERATURAN_MAP: Record<JenisLaporan, string> = {
+  [JenisLaporan.RAPERDA]: "RANCANGAN PERATURAN DAERAH KABUPATEN KENDAL",
+  [JenisLaporan.PERDA]: "PERATURAN DAERAH KABUPATEN KENDAL",
+  [JenisLaporan.SALINAN_PERDA]: "PERATURAN DAERAH KABUPATEN KENDAL",
+  [JenisLaporan.RAPERBUP]: "RANCANGAN PERATURAN BUPATI KENDAL",
+  [JenisLaporan.PERBUP]: "PERATURAN BUPATI KENDAL",
+  [JenisLaporan.SALINAN_PERBUP]: "PERATURAN BUPATI KENDAL",
+};
 
-function getShortLabel(jenisLaporan: JenisLaporan): string {
-  switch (jenisLaporan) {
-    case JenisLaporan.RAPERDA:
-      return "RAPERDA";
-    case JenisLaporan.PERDA:
-      return "PERDA";
-    case JenisLaporan.SALINAN_PERDA:
-      return "SALINAN PERDA";
-    case JenisLaporan.RAPERBUP:
-      return "RAPERBUP";
-    case JenisLaporan.PERBUP:
-      return "PERBUP";
-    case JenisLaporan.SALINAN_PERBUP:
-      return "SALINAN PERBUP";
-  }
-}
+const SHORT_LABEL_MAP: Record<JenisLaporan, string> = {
+  [JenisLaporan.RAPERDA]: "RAPERDA",
+  [JenisLaporan.PERDA]: "PERDA",
+  [JenisLaporan.SALINAN_PERDA]: "SALINAN PERDA",
+  [JenisLaporan.RAPERBUP]: "RAPERBUP",
+  [JenisLaporan.PERBUP]: "PERBUP",
+  [JenisLaporan.SALINAN_PERBUP]: "SALINAN PERBUP",
+};
 
 // ─── Drag Handle Icon ─────────────────────────────────────────────────────────
 
-function DragHandle({ isDragging }: { isDragging: boolean }) {
+// Rule 6.3: Hoist static repeated JSX (dot grid) to module-level constants.
+const DOT = <span className="block h-[3px] w-[3px] rounded-full bg-current" />;
+const DOT_ROW = (
+  <div className="flex gap-[3px]">
+    {DOT}
+    {DOT}
+  </div>
+);
+
+// Rule 5.5: Extract to memoized component so it only re-renders when isDragging changes.
+const DragHandle = memo(function DragHandle({ isDragging }: { isDragging: boolean }) {
   return (
     <div
       title="Drag untuk mengubah urutan"
@@ -64,21 +62,15 @@ function DragHandle({ isDragging }: { isDragging: boolean }) {
           : "text-gray-300 hover:bg-gray-100 hover:text-gray-500"
       }`}
     >
-      <div className="flex gap-[3px]">
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-      </div>
-      <div className="flex gap-[3px]">
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-      </div>
-      <div className="flex gap-[3px]">
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-      </div>
+      {DOT_ROW}
+      {DOT_ROW}
+      {DOT_ROW}
     </div>
   );
-}
+});
+
+// Rule 6.3: Hoist constant outside component to avoid redeclaring on every render.
+const ITEMS_PER_PAGE = 8;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -109,8 +101,6 @@ export default function LampiranUtamaContent({
     null,
   );
 
-  const itemsPerPage = 8;
-
   // ─── Filter & Pagination ──────────────────────────────────────────────────
 
   const filteredLampirans = useMemo(
@@ -121,11 +111,13 @@ export default function LampiranUtamaContent({
     [search, lampirans],
   );
 
-  const totalPages = Math.ceil(filteredLampirans.length / itemsPerPage);
+  // Rule 5.3: Simple arithmetic with primitive result — do NOT wrap in useMemo.
+  const totalPages = Math.ceil(filteredLampirans.length / ITEMS_PER_PAGE);
 
+  // Rule 5.1: Derive paginated slice directly during render; no extra state needed.
   const paginatedLampirans = filteredLampirans.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage,
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE,
   );
 
   // ─── Modal handlers ───────────────────────────────────────────────────────
@@ -159,16 +151,17 @@ export default function LampiranUtamaContent({
 
   const reapplyFootersFrom = useCallback(
     async (sorted: LampiranUtama[], fromIdx: number) => {
+      // Rule 7.6: Combine flatMap+reduce into a single pass to count skipped pages.
       const halamanBernomorOf = (l: LampiranUtama): number => {
         const totalPdf = l.jumlahHalaman || 0;
-        const totalSkip = l.babs
-          .flatMap((b) => b.lampiranCalk ?? [])
-          .reduce((sum, lc) => {
-            const skipped = lc.sampaiAkhir
+        let totalSkip = 0;
+        for (const b of l.babs) {
+          for (const lc of b.lampiranCalk ?? []) {
+            totalSkip += lc.sampaiAkhir
               ? Math.max(0, totalPdf - lc.halamanMulai + 1)
               : lc.jumlahHalaman || 0;
-            return sum + skipped;
-          }, 0);
+          }
+        }
         return Math.max(0, totalPdf - totalSkip);
       };
 
@@ -314,15 +307,18 @@ export default function LampiranUtamaContent({
     (e: React.DragEvent, targetId: string) => {
       e.preventDefault();
       const dragId = e.dataTransfer.getData("dragId");
+      // Rule 7.8: Early return for no-op drops.
       if (dragId === targetId) return;
 
-      const arr = [...lampirans];
+      // Rule 7.12: toSorted() instead of [...arr] + .sort() to avoid double allocation.
+      const arr = lampirans.toSorted((a, b) => a.urutan - b.urutan);
       const fromIdx = arr.findIndex((l) => l.id === dragId);
       const toIdx = arr.findIndex((l) => l.id === targetId);
-      const [moved] = arr.splice(fromIdx, 1);
-      arr.splice(toIdx, 0, moved);
+      const mutable = [...arr];
+      const [moved] = mutable.splice(fromIdx, 1);
+      mutable.splice(toIdx, 0, moved);
 
-      const reordered = arr.map((l, i) => ({ ...l, urutan: i + 1 }));
+      const reordered = mutable.map((l, i) => ({ ...l, urutan: i + 1 }));
       onReorder(reordered);
       setDragOverId(null);
       setDraggingId(null);
@@ -336,6 +332,7 @@ export default function LampiranUtamaContent({
 
   const handleUrutanCommit = useCallback(
     async (lampiran: LampiranUtama, rawValue: string) => {
+      // Rule 5.9: Functional setState to avoid stale closure on editingUrutan.
       setEditingUrutan((prev) => {
         const next = { ...prev };
         delete next[lampiran.id];
@@ -344,6 +341,7 @@ export default function LampiranUtamaContent({
 
       const newUrutan = parseInt(rawValue);
       const total = lampirans.length;
+      // Rule 7.8: Early return for invalid / no-op values.
       if (
         isNaN(newUrutan) ||
         newUrutan < 1 ||
@@ -352,7 +350,8 @@ export default function LampiranUtamaContent({
       )
         return;
 
-      const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
+      // Rule 7.12: Use toSorted() for immutability — does not mutate the lampirans prop.
+      const sorted = lampirans.toSorted((a, b) => a.urutan - b.urutan);
       const oldIdx = sorted.findIndex((l) => l.id === lampiran.id);
       const newIdx = newUrutan - 1;
 
@@ -374,7 +373,8 @@ export default function LampiranUtamaContent({
 
   const handleRemove = useCallback(
     (lampiran: LampiranUtama) => {
-      const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
+      // Rule 7.12: toSorted() instead of [...arr].sort() for immutability.
+      const sorted = lampirans.toSorted((a, b) => a.urutan - b.urutan);
       const removedIdx = sorted.findIndex((l) => l.id === lampiran.id);
       onRemove(lampiran.id);
       const remaining = sorted
@@ -389,6 +389,7 @@ export default function LampiranUtamaContent({
 
   // ─── Hitung startPage ─────────────────────────────────────────────────────
 
+  // Rule 7.6: Inline helper to avoid repeated closure allocation on hot path.
   const halamanDiberiNomorOf = (l: LampiranUtama): number => {
     const halamanSkip = l.babs
       .flatMap((b) => b.lampiranCalk ?? [])
@@ -402,14 +403,17 @@ export default function LampiranUtamaContent({
   };
 
   const startPageForNew = useMemo(() => {
-    const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
+    // Rule 7.12: toSorted() for immutability.
+    const sorted = lampirans.toSorted((a, b) => a.urutan - b.urutan);
     return sorted.reduce((acc, l) => acc + halamanDiberiNomorOf(l), 1);
   }, [lampirans]);
 
   const getStartPageForEdit = (lampiran: LampiranUtama): number => {
-    const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
+    // Rule 7.12: toSorted() for immutability.
+    const sorted = lampirans.toSorted((a, b) => a.urutan - b.urutan);
     let page = 1;
     for (const l of sorted) {
+      // Rule 7.8: Early return pattern.
       if (l.id === lampiran.id) break;
       page += halamanDiberiNomorOf(l);
     }
@@ -454,11 +458,12 @@ export default function LampiranUtamaContent({
                 </span>
               ) : null}
             </div>
-            <p className="mt-0.5 text-sm text-gray-400">
-              {lampirans.length} lampiran ·{" "}
-              {lampirans.reduce((s, l) => s + (l.jumlahHalaman || 0), 0)}{" "}
-              halaman total
-            </p>
+          {/* Rule 5.1: Derive totalHalaman inline — no separate state needed for this simple sum. */}
+          <p className="mt-0.5 text-sm text-gray-400">
+            {lampirans.length} lampiran ·{" "}
+            {lampirans.reduce((s, l) => s + (l.jumlahHalaman || 0), 0)}{" "}
+            halaman total
+          </p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -531,10 +536,10 @@ export default function LampiranUtamaContent({
               <span className="font-medium">Konteks dari Informasi Umum:</span>
             </div>
             <span className="rounded-md bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-700">
-              {getShortLabel(jenisLaporan)}
+              {SHORT_LABEL_MAP[jenisLaporan]}
             </span>
             <span className="truncate text-indigo-500">
-              {getLabelPeraturan(jenisLaporan)}
+              {LABEL_PERATURAN_MAP[jenisLaporan]}
             </span>
             <span className="text-indigo-400">·</span>
             <span className="text-indigo-500">Tahun {tahun}</span>

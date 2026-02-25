@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import { PDFDocument, StandardFonts, rgb, PageSizes, type RGB } from "pdf-lib";
 import {
   LampiranUtama,
@@ -53,6 +53,9 @@ const LAYOUT_RATIOS = {
 } as const;
 
 const FONT_SIZES = { heading: 20, subheading: 18, label: 7 } as const;
+
+// Rule 6.3: Hoist static option arrays to module level — not recreated on every render.
+const PAGE_SIZE_OPTIONS: PageSize[] = ["LEGAL", "A4"];
 const LINE_GAP_PT = 21;
 const Y_OFFSET = 8;
 const GARUDA_MAX_WIDTH = 130;
@@ -68,43 +71,32 @@ const DEFAULT_COVER = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Rule 7.8: Early return at each size boundary — avoids evaluating lower branches.
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1_048_576).toFixed(2)} MB`;
 }
 
-function getLabelPeraturan(jenisLaporan: JenisLaporan): string {
-  switch (jenisLaporan) {
-    case JenisLaporan.RAPERDA:
-      return "RANCANGAN PERATURAN DAERAH KABUPATEN KENDAL";
-    case JenisLaporan.PERDA:
-    case JenisLaporan.SALINAN_PERDA:
-      return "PERATURAN DAERAH KABUPATEN KENDAL";
-    case JenisLaporan.RAPERBUP:
-      return "RANCANGAN PERATURAN BUPATI KENDAL";
-    case JenisLaporan.PERBUP:
-    case JenisLaporan.SALINAN_PERBUP:
-      return "PERATURAN BUPATI KENDAL";
-  }
-}
+// Rule 6.3 / 7.4 / 7.11: Replace switch-case functions with module-level Record maps.
+// Created once, never recreated; O(1) lookup vs O(n) switch evaluation.
+const LABEL_PERATURAN_MAP: Record<JenisLaporan, string> = {
+  [JenisLaporan.RAPERDA]: "RANCANGAN PERATURAN DAERAH KABUPATEN KENDAL",
+  [JenisLaporan.PERDA]: "PERATURAN DAERAH KABUPATEN KENDAL",
+  [JenisLaporan.SALINAN_PERDA]: "PERATURAN DAERAH KABUPATEN KENDAL",
+  [JenisLaporan.RAPERBUP]: "RANCANGAN PERATURAN BUPATI KENDAL",
+  [JenisLaporan.PERBUP]: "PERATURAN BUPATI KENDAL",
+  [JenisLaporan.SALINAN_PERBUP]: "PERATURAN BUPATI KENDAL",
+};
 
-function getShortLabel(jenisLaporan: JenisLaporan): string {
-  switch (jenisLaporan) {
-    case JenisLaporan.RAPERDA:
-      return "RAPERDA";
-    case JenisLaporan.PERDA:
-      return "PERDA";
-    case JenisLaporan.SALINAN_PERDA:
-      return "SALINAN PERDA";
-    case JenisLaporan.RAPERBUP:
-      return "RAPERBUP";
-    case JenisLaporan.PERBUP:
-      return "PERBUP";
-    case JenisLaporan.SALINAN_PERBUP:
-      return "SALINAN PERBUP";
-  }
-}
+const SHORT_LABEL_MAP: Record<JenisLaporan, string> = {
+  [JenisLaporan.RAPERDA]: "RAPERDA",
+  [JenisLaporan.PERDA]: "PERDA",
+  [JenisLaporan.SALINAN_PERDA]: "SALINAN PERDA",
+  [JenisLaporan.RAPERBUP]: "RAPERBUP",
+  [JenisLaporan.PERBUP]: "PERBUP",
+  [JenisLaporan.SALINAN_PERBUP]: "SALINAN PERBUP",
+};
 
 /** Snapshot key — mencakup lampiransPendukung agar stale detection akurat */
 function snapshotKey(
@@ -175,7 +167,7 @@ async function buildCoverPage(
   }
 
   drawCentered(
-    getLabelPeraturan(jenisLaporan),
+    LABEL_PERATURAN_MAP[jenisLaporan],
     PH * LAYOUT_RATIOS.perdaTitle + Y_OFFSET,
     FONT_SIZES.heading,
   );
@@ -252,7 +244,7 @@ function buildCoverLampiran(
   let cy = PH - 90;
   dc(`LAMPIRAN ${lampiran.romawiLampiran}`, cy, 15);
   cy -= 50;
-  dc(getLabelPeraturan(jenisLaporan), cy, 15);
+  dc(LABEL_PERATURAN_MAP[jenisLaporan], cy, 15);
   cy -= 20;
   dc(
     nomor ? `NOMOR ${nomor} TAHUN ${tahun}` : `NOMOR   TAHUN ${tahun}`,
@@ -275,7 +267,9 @@ function buildCoverLampiran(
 
 // ─── PDF Preview Modal ────────────────────────────────────────────────────────
 
-function PreviewModal({
+// Rule 5.5: Extract to memoized component — PreviewModal only re-renders when its own props change,
+// not on every parent state update (progress, steps, etc.).
+const PreviewModal = memo(function PreviewModal({
   url,
   onClose,
   onDownload,
@@ -290,13 +284,24 @@ function PreviewModal({
   resultPages: number;
   resultSize: string;
 }) {
+  // Rule 8.2: Store latest onClose in a ref — the effect only mounts/unmounts once,
+  // but always calls the current handler without adding it to the dependency array.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
-    window.addEventListener("keydown", h);
+    // Rule 4.2: Passive listener — we never call preventDefault(), so mark as passive
+    // to allow the browser to optimize scroll/keyboard performance.
+    window.addEventListener("keydown", h, { passive: true });
     return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
+    // Rule 5.6: Empty deps — effect runs once on mount/unmount.
+    // onClose changes are handled via the ref above, not via re-subscription.
+  }, []);
 
   return (
     <div
@@ -390,11 +395,12 @@ function PreviewModal({
       </div>
     </div>
   );
-}
+});
 
 // ─── Stale Banner ─────────────────────────────────────────────────────────────
 
-function StaleBanner({
+// Rule 5.5: Memoized — only re-renders when changes/callbacks actually change.
+const StaleBanner = memo(function StaleBanner({
   changes,
   onDismiss,
   onRegenerate,
@@ -457,7 +463,7 @@ function StaleBanner({
       </div>
     </div>
   );
-}
+});
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -513,13 +519,29 @@ export default function GenerateContent({
     const [prevIds, prevPIds, prevBatang, prevJenis, prevTahun, prevNomor] =
       prev.split("__");
 
-    // Lampiran utama
-    const prevIdSet = new Set(
+    // Rule 7.11: Build Maps from previous snapshot segments for O(1) lookups —
+    // avoids repeated .find() O(n) scans inside the .filter() calls below.
+    const prevUMap = new Map(
       prevIds
         .split("|")
-        .map((s) => s.split(":")[0])
-        .filter(Boolean),
+        .filter(Boolean)
+        .map((s) => {
+          const [id, urutan, halaman] = s.split(":");
+          return [id, { urutan, halaman }] as const;
+        }),
     );
+    const prevPMap = new Map(
+      (prevPIds || "")
+        .split("|")
+        .filter(Boolean)
+        .map((s) => {
+          const [id, urutan, halaman] = s.split(":");
+          return [id, { urutan, halaman }] as const;
+        }),
+    );
+
+    // Lampiran utama
+    const prevIdSet = new Set(prevUMap.keys());
     const currIdSet = new Set(lampirans.map((l) => l.id));
     const added = lampirans.filter((l) => !prevIdSet.has(l.id));
     const removed = [...prevIdSet].filter((id) => !currIdSet.has(id));
@@ -530,11 +552,11 @@ export default function GenerateContent({
     if (removed.length > 0)
       changes.push(`${removed.length} lampiran utama dihapus`);
 
+    // Rule 7.11: O(1) Map.get() instead of O(n) .find() per lampiran
     const updatedU = lampirans.filter((l) => {
-      const p = prevIds.split("|").find((s) => s.startsWith(l.id + ":"));
+      const p = prevUMap.get(l.id);
       if (!p) return false;
-      const [, pu, ph] = p.split(":");
-      return String(l.urutan) !== pu || String(l.jumlahHalaman) !== ph;
+      return String(l.urutan) !== p.urutan || String(l.jumlahHalaman) !== p.halaman;
     });
     if (updatedU.length > 0)
       changes.push(
@@ -542,12 +564,7 @@ export default function GenerateContent({
       );
 
     // Lampiran pendukung
-    const prevPIdSet = new Set(
-      (prevPIds || "")
-        .split("|")
-        .map((s) => s.split(":")[0])
-        .filter(Boolean),
-    );
+    const prevPIdSet = new Set(prevPMap.keys());
     const currPIdSet = new Set(lampiransPendukung.map((l) => l.id));
     const addedP = lampiransPendukung.filter((l) => !prevPIdSet.has(l.id));
     const removedP = [...prevPIdSet].filter((id) => !currPIdSet.has(id));
@@ -556,13 +573,11 @@ export default function GenerateContent({
     if (removedP.length > 0)
       changes.push(`${removedP.length} lampiran pendukung dihapus`);
 
+    // Rule 7.11: O(1) Map.get() instead of O(n) .find() per pendukung
     const updatedP = lampiransPendukung.filter((l) => {
-      const p = (prevPIds || "")
-        .split("|")
-        .find((s) => s.startsWith(l.id + ":"));
+      const p = prevPMap.get(l.id);
       if (!p) return false;
-      const [, pu, ph] = p.split(":");
-      return String(l.urutan) !== pu || String(l.jumlahTotalLembar) !== ph;
+      return String(l.urutan) !== p.urutan || String(l.jumlahTotalLembar) !== p.halaman;
     });
     if (updatedP.length > 0)
       changes.push(`${updatedP.length} lampiran pendukung diubah urutannya`);
@@ -575,7 +590,7 @@ export default function GenerateContent({
     }
     if (prevJenis !== jenisLaporan)
       changes.push(
-        `Jenis laporan berubah menjadi ${getShortLabel(jenisLaporan)}`,
+        `Jenis laporan berubah menjadi ${SHORT_LABEL_MAP[jenisLaporan]}`,
       );
     if (prevTahun !== String(tahun))
       changes.push(`Tahun berubah menjadi ${tahun}`);
@@ -596,33 +611,44 @@ export default function GenerateContent({
     nomor,
   ]);
 
+  // Rule 5.3: Simple boolean expression with primitive result — computed inline during render.
   const showStaleBanner =
     isDone && staleChanges.length > 0 && !isStaleDismissed && !isGenerating;
 
   // ── Sorted lists ─────────────────────────────────────────────────────────
 
+  // Rule 7.12: toSorted() — immutable sort, does not mutate the lampirans prop array.
   const sorted = useMemo(
-    () => [...lampirans].sort((a, b) => a.urutan - b.urutan),
+    () => lampirans.toSorted((a, b) => a.urutan - b.urutan),
     [lampirans],
   );
 
+  // Rule 7.12: toSorted() — immutable sort, does not mutate the lampiransPendukung prop array.
   const sortedPendukung = useMemo(
-    () => [...lampiransPendukung].sort((a, b) => a.urutan - b.urutan),
+    () => lampiransPendukung.toSorted((a, b) => a.urutan - b.urutan),
     [lampiransPendukung],
   );
 
-  const totalHalamanUtama = useMemo(
-    () => lampirans.reduce((s, l) => s + (l.jumlahHalaman || 0), 0),
-    [lampirans],
+  // Rule 5.3: Simple reduce expressions with numeric (primitive) results — do NOT wrap in useMemo.
+  // The useMemo hook overhead (closure + dependency comparison) exceeds the cost of the expression.
+  const totalHalamanUtama = lampirans.reduce(
+    (s, l) => s + (l.jumlahHalaman || 0),
+    0,
   );
-  const totalHalamanPendukung = useMemo(
-    () =>
-      lampiransPendukung.reduce((s, l) => s + (l.jumlahTotalLembar || 0), 0),
-    [lampiransPendukung],
+  const totalHalamanPendukung = lampiransPendukung.reduce(
+    (s, l) => s + (l.jumlahTotalLembar || 0),
+    0,
   );
 
-  const updateStep = (id: string, patch: Partial<MergeStep>) =>
-    setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  // Rule 5.9: Functional setState in updateStep avoids capturing stale `steps` in closure.
+  // Rule 5.7: useCallback so handleGenerate's dependency on updateStep is stable.
+  const updateStep = useCallback(
+    (id: string, patch: Partial<MergeStep>) =>
+      setSteps((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+      ),
+    [],
+  );
 
   // ── Generate ─────────────────────────────────────────────────────────────
 
@@ -687,7 +713,7 @@ export default function GenerateContent({
       await buildCoverPage(merged, jenisLaporan, tahun, nomor, pageSize);
       updateStep("cover", {
         status: "done",
-        detail: `${getShortLabel(jenisLaporan)} · ${pageSize}${nomor ? ` · No. ${nomor}` : " · Nomor kosong"}`,
+        detail: `${SHORT_LABEL_MAP[jenisLaporan]} · ${pageSize}${nomor ? ` · No. ${nomor}` : " · Nomor kosong"}`,
       });
       setProgress(5);
 
@@ -695,6 +721,8 @@ export default function GenerateContent({
       if (batangTubuh) {
         updateStep("batang", { status: "loading" });
         try {
+          // Rule 1.4: fetch + arrayBuffer + PDFDocument.load chained — unavoidably sequential
+          // (each step depends on the previous), but isolated in its own try/catch.
           const src = await PDFDocument.load(
             await (await fetch(batangTubuh)).arrayBuffer(),
             { ignoreEncryption: true },
@@ -734,12 +762,17 @@ export default function GenerateContent({
       updateStep("init", { status: "done" });
       setProgress(14);
 
-      // 4. Lampiran utama (cover pembatas + PDF isi)
+      // 4. Lampiran utama — cover pembatas + PDF isi
       for (let i = 0; i < sorted.length; i++) {
         const l = sorted[i];
         updateStep(l.id, { status: "loading" });
         try {
           if (!l.fileUrl) throw new Error("URL tidak ditemukan");
+
+          // Rule 1.4: Start the fetch before building the cover page so the network
+          // request overlaps with the synchronous PDF drawing work.
+          const fetchPromise = fetch(l.fileUrl).then((r) => r.arrayBuffer());
+
           buildCoverLampiran(
             merged,
             l,
@@ -750,10 +783,11 @@ export default function GenerateContent({
             fontBold,
             pageSize,
           );
-          const src = await PDFDocument.load(
-            await (await fetch(l.fileUrl)).arrayBuffer(),
-            { ignoreEncryption: true },
-          );
+
+          // Now await the already-in-flight fetch result.
+          const src = await PDFDocument.load(await fetchPromise, {
+            ignoreEncryption: true,
+          });
           (await merged.copyPages(src, src.getPageIndices())).forEach((p) =>
             merged.addPage(p),
           );
@@ -826,27 +860,20 @@ export default function GenerateContent({
     } finally {
       setIsGenerating(false);
     }
-  }, [
-    sorted,
-    sortedPendukung,
-    isGenerating,
-    batangTubuh,
-    jenisLaporan,
-    tahun,
-    nomor,
-    pageSize,
-    currentSnapshot,
-  ]);
+  }, [sorted, isGenerating, batangTubuh, sortedPendukung, jenisLaporan, tahun, nomor, pageSize, updateStep, currentSnapshot]);
 
-  const handleDownload = () => {
+  // Rule 5.7: useCallback — stable reference passed as prop to memoized PreviewModal
+  // and download/reset buttons; prevents unnecessary child re-renders.
+  const handleDownload = useCallback(() => {
     if (!resultUrl) return;
     const a = document.createElement("a");
     a.href = resultUrl;
-    a.download = `${getShortLabel(jenisLaporan)}-Gabungan-${pageSize}.pdf`;
+    a.download = `${SHORT_LABEL_MAP[jenisLaporan]}-Gabungan-${pageSize}.pdf`;
     a.click();
-  };
+  }, [resultUrl, jenisLaporan, pageSize]);
 
-  const handleReset = () => {
+  // Rule 5.7: useCallback — stable reference for reset handler.
+  const handleReset = useCallback(() => {
     setSteps([]);
     setIsDone(false);
     setResultUrl(null);
@@ -856,16 +883,17 @@ export default function GenerateContent({
     generatedSnapshotRef.current = null;
     setStaleChanges([]);
     setIsStaleDismissed(false);
-  };
+  }, []);
 
-  const fileName = `${getShortLabel(jenisLaporan)}-Gabungan-${pageSize}.pdf`;
-  const labelPeraturan = getLabelPeraturan(jenisLaporan);
+  // Rule 5.1: Derived strings — computed directly during render, no extra state needed.
+  const fileName = `${SHORT_LABEL_MAP[jenisLaporan]}-Gabungan-${pageSize}.pdf`;
+  const labelPeraturan = LABEL_PERATURAN_MAP[jenisLaporan];
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <>
-      {isPreviewOpen && resultUrl && (
+      {isPreviewOpen && resultUrl !== null && (
         <PreviewModal
           url={resultUrl}
           onClose={() => setIsPreviewOpen(false)}
@@ -982,7 +1010,7 @@ export default function GenerateContent({
                       Jenis
                     </p>
                     <p className="mt-0.5 text-sm font-semibold text-indigo-800">
-                      {getShortLabel(jenisLaporan)}
+                      {SHORT_LABEL_MAP[jenisLaporan]}
                     </p>
                     <p className="text-[11px] leading-snug text-indigo-500">
                       {labelPeraturan}
@@ -1023,7 +1051,7 @@ export default function GenerateContent({
                       Ukuran Halaman
                     </label>
                     <div className="flex rounded-lg border border-gray-200 bg-white p-1">
-                      {(["LEGAL", "A4"] as PageSize[]).map((size) => (
+                      {PAGE_SIZE_OPTIONS.map((size) => (
                         <button
                           key={size}
                           onClick={() => setPageSize(size)}
@@ -1493,7 +1521,7 @@ export default function GenerateContent({
               </div>
 
               {/* Hasil */}
-              {isDone && resultUrl && (
+              {isDone && resultUrl !== null && (
                 <div className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50">
                   <div className="flex items-center gap-4 px-6 py-5">
                     <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100">
@@ -1521,9 +1549,9 @@ export default function GenerateContent({
                         <span>{resultSize}</span>
                         <span>·</span>
                         <span>
-                          {getShortLabel(jenisLaporan)} {pageSize}
+                          {SHORT_LABEL_MAP[jenisLaporan]} {pageSize}
                         </span>
-                        {batangTubuh && (
+                        {batangTubuh !== null && (
                           <>
                             <span>·</span>
                             <span>Batang Tubuh</span>

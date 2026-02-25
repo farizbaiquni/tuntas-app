@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo } from "react";
 import {
   DokumenLaporan,
   JenisLaporan,
@@ -129,12 +129,35 @@ const STATUS_OPTIONS: {
   },
 ];
 
+// Rule 7.11: Build Set/Map at module level for O(1) lookups — avoids repeated .find() calls
+// inside the render loop.
+const JENIS_LAPORAN_MAP = new Map(
+  JENIS_LAPORAN_OPTIONS.map((o) => [o.value, o]),
+);
+const STATUS_MAP = new Map(STATUS_OPTIONS.map((o) => [o.value, o]));
+
+// Rule 7.11: Use Set for O(1) membership checks instead of repeated === comparisons.
+const JENIS_NEEDS_NOMOR = new Set<JenisLaporan>([
+  JenisLaporan.PERDA,
+  JenisLaporan.PERBUP,
+  JenisLaporan.SALINAN_PERDA,
+  JenisLaporan.SALINAN_PERBUP,
+]);
+
+const JENIS_PERDA = new Set<JenisLaporan>([
+  JenisLaporan.RAPERDA,
+  JenisLaporan.PERDA,
+  JenisLaporan.SALINAN_PERDA,
+]);
+
 const CURRENT_YEAR = new Date().getFullYear();
+// Rule 6.3: Hoist static derived data to module level so it's not recreated on every render.
 const YEAR_OPTIONS = Array.from({ length: 10 }, (_, i) => CURRENT_YEAR - 2 + i);
 
 // ─── Helper: format tanggal Indonesia ────────────────────────────────────────
 
 function formatTanggalIndonesia(isoDate: string | null): string {
+  // Rule 7.8: Early return for falsy input.
   if (!isoDate) return "—";
   const d = new Date(isoDate);
   return d.toLocaleDateString("id-ID", {
@@ -146,7 +169,17 @@ function formatTanggalIndonesia(isoDate: string | null): string {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function SectionCard({
+// Rule 5.4: Extract default non-primitive prop value for memoized component to a module-level
+// constant so memo() comparison is stable across renders.
+const ACCENT_CLASSES = {
+  indigo: "bg-indigo-50 text-indigo-600 ring-indigo-100",
+  violet: "bg-violet-50 text-violet-600 ring-violet-100",
+  emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+  amber: "bg-amber-50 text-amber-600 ring-amber-100",
+} as const;
+
+// Rule 5.5: Extract to memoized component so SectionCard only re-renders when its own props change.
+const SectionCard = memo(function SectionCard({
   icon,
   title,
   subtitle,
@@ -157,25 +190,20 @@ function SectionCard({
   title: string;
   subtitle?: string;
   children: React.ReactNode;
-  accent?: "indigo" | "violet" | "emerald" | "amber";
+  accent?: keyof typeof ACCENT_CLASSES;
 }) {
-  const accentMap = {
-    indigo: "bg-indigo-50 text-indigo-600 ring-indigo-100",
-    violet: "bg-violet-50 text-violet-600 ring-violet-100",
-    emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
-    amber: "bg-amber-50 text-amber-600 ring-amber-100",
-  };
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
       <div className="flex items-center gap-4 border-b border-gray-100 px-6 py-5">
         <div
-          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ring-1 ${accentMap[accent]}`}
+          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ring-1 ${ACCENT_CLASSES[accent]}`}
         >
           {icon}
         </div>
         <div>
           <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
-          {subtitle && (
+          {/* Rule 6.8: Explicit conditional rendering. */}
+          {subtitle !== undefined && (
             <p className="mt-0.5 text-xs text-gray-400">{subtitle}</p>
           )}
         </div>
@@ -183,7 +211,7 @@ function SectionCard({
       <div className="p-6">{children}</div>
     </div>
   );
-}
+});
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -195,48 +223,65 @@ export default function InformasiUmumContent({
   onTanggalPengesahanChange,
   onStatusChange,
 }: InformasiUmumProps) {
+  // Rule 5.10: Lazy state initialization — function form so the initial string conversion
+  // only runs once on mount.
   const [nomorInput, setNomorInput] = useState<string>(
-    dokumen.nomor !== null ? String(dokumen.nomor) : "",
+    () => (dokumen.nomor !== null ? String(dokumen.nomor) : ""),
   );
 
-  const selectedJenis = JENIS_LAPORAN_OPTIONS.find(
-    (o) => o.value === dokumen.jenisLaporan,
-  );
-  const selectedStatus = STATUS_OPTIONS.find((o) => o.value === dokumen.status);
+  // Rule 7.11: O(1) Map lookups instead of .find() O(n) scans on every render.
+  const selectedJenis = JENIS_LAPORAN_MAP.get(dokumen.jenisLaporan);
+  const selectedStatus = STATUS_MAP.get(dokumen.status);
 
-  const isRaPerNeedNomor =
-    dokumen.jenisLaporan === JenisLaporan.PERDA ||
-    dokumen.jenisLaporan === JenisLaporan.PERBUP ||
-    dokumen.jenisLaporan === JenisLaporan.SALINAN_PERDA ||
-    dokumen.jenisLaporan === JenisLaporan.SALINAN_PERBUP;
+  // Rule 5.3: Simple boolean expressions with primitive result — do NOT wrap in useMemo.
+  const isRaPerNeedNomor = JENIS_NEEDS_NOMOR.has(dokumen.jenisLaporan);
+  const isPerda = JENIS_PERDA.has(dokumen.jenisLaporan);
 
-  // Summary stats
+  // Rule 5.3 / 7.6: Combine array iterations in a single pass rather than multiple
+  // .reduce()/.some() calls. useMemo is appropriate here since we produce a non-primitive
+  // object from an array that may be large — keeps the memo cost low and stable.
   const stats = useMemo(() => {
-    const totalLampiran = dokumen.lampirans.length;
-    const totalHalaman = dokumen.lampirans.reduce(
-      (s, l) => s + (l.jumlahHalaman || 0),
-      0,
-    );
-    const hasCALK = dokumen.lampirans.some((l) => l.isCALK);
-    const hasBatangTubuh = !!dokumen.batangTubuh;
-    return { totalLampiran, totalHalaman, hasCALK, hasBatangTubuh };
+    let totalHalaman = 0;
+    let hasCALK = false;
+    for (const l of dokumen.lampirans) {
+      totalHalaman += l.jumlahHalaman ?? 0;
+      if (l.isCALK) hasCALK = true;
+    }
+    return {
+      totalLampiran: dokumen.lampirans.length,
+      totalHalaman,
+      hasCALK,
+      hasBatangTubuh: dokumen.batangTubuh !== null && dokumen.batangTubuh !== undefined,
+    };
   }, [dokumen.lampirans, dokumen.batangTubuh]);
 
+  // Rule 5.7: Interaction logic lives in the event handler, not in an effect.
   const handleNomorBlur = () => {
-    const parsed = parseInt(nomorInput, 10);
-    if (!nomorInput.trim()) {
+    const trimmed = nomorInput.trim();
+    // Rule 7.8: Early return for the common "cleared" path.
+    if (!trimmed) {
       onNomorChange(null);
-    } else if (!isNaN(parsed) && parsed > 0) {
+      return;
+    }
+    const parsed = parseInt(trimmed, 10);
+    if (!isNaN(parsed) && parsed > 0) {
       onNomorChange(parsed);
     } else {
       setNomorInput(dokumen.nomor !== null ? String(dokumen.nomor) : "");
     }
   };
 
-  const isPerda =
-    dokumen.jenisLaporan === JenisLaporan.RAPERDA ||
-    dokumen.jenisLaporan === JenisLaporan.PERDA ||
-    dokumen.jenisLaporan === JenisLaporan.SALINAN_PERDA;
+  // Rule 7.12: Use toSorted() for immutability — avoids mutating dokumen.lampirans prop array.
+  const sortedLampirans = useMemo(
+    () => dokumen.lampirans.toSorted((a, b) => a.urutan - b.urutan),
+    [dokumen.lampirans],
+  );
+
+  // Pre-compute the current status index once so it's not recalculated inside the render loop.
+  // Rule 7.4: Cache repeated function call result.
+  const currentStatusIdx = STATUS_OPTIONS.findIndex(
+    (o) => o.value === dokumen.status,
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -411,6 +456,7 @@ export default function InformasiUmumContent({
                               : "border-gray-100 bg-gray-50 text-gray-500 hover:border-gray-200 hover:bg-white"
                           }`}
                         >
+                          {/* Rule 6.8: Explicit conditional rendering. */}
                           {isSelected && (
                             <span className="absolute top-3 right-3 flex h-5 w-5 items-center justify-center rounded-full bg-current/15">
                               <svg
@@ -527,6 +573,7 @@ export default function InformasiUmumContent({
                   TAHUN {dokumen.tahun}
                 </span>
               </div>
+              {/* Rule 6.8: Explicit conditional rendering with boolean gate. */}
               {isRaPerNeedNomor && !dokumen.nomor && (
                 <p className="flex items-center gap-1.5 text-[11px] text-amber-500">
                   <svg
@@ -545,7 +592,7 @@ export default function InformasiUmumContent({
                   Nomor wajib diisi untuk jenis {selectedJenis?.shortLabel}
                 </p>
               )}
-              {dokumen.nomor && (
+              {dokumen.nomor !== null && dokumen.nomor !== undefined && (
                 <p className="text-[11px] text-emerald-600">
                   ✓ Nomor {dokumen.nomor} Tahun {dokumen.tahun} sudah diset
                 </p>
@@ -567,11 +614,12 @@ export default function InformasiUmumContent({
                   }
                   className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 focus:border-violet-400 focus:ring-1 focus:ring-violet-300 focus:outline-none"
                 />
-                {dokumen.tanggalPengesahan && (
-                  <p className="text-[11px] text-gray-400">
-                    {formatTanggalIndonesia(dokumen.tanggalPengesahan)}
-                  </p>
-                )}
+                {dokumen.tanggalPengesahan !== null &&
+                  dokumen.tanggalPengesahan !== undefined && (
+                    <p className="text-[11px] text-gray-400">
+                      {formatTanggalIndonesia(dokumen.tanggalPengesahan)}
+                    </p>
+                  )}
               </div>
             </div>
           </div>
@@ -602,11 +650,9 @@ export default function InformasiUmumContent({
           <div className="mb-6">
             <div className="relative flex items-center">
               {STATUS_OPTIONS.map((s, i) => {
-                const currentIdx = STATUS_OPTIONS.findIndex(
-                  (o) => o.value === dokumen.status,
-                );
-                const isPast = i <= currentIdx;
-                const isActive = i === currentIdx;
+                // Rule 7.4: Use pre-computed index instead of calling findIndex inside loop.
+                const isPast = i <= currentStatusIdx;
+                const isActive = i === currentStatusIdx;
                 return (
                   <div key={s.value} className="flex flex-1 items-center">
                     <button
@@ -622,6 +668,7 @@ export default function InformasiUmumContent({
                               : "border-gray-200 bg-white text-gray-300 group-hover:border-gray-300"
                         }`}
                       >
+                        {/* Rule 6.8: Explicit conditional rendering. */}
                         {isPast && !isActive ? (
                           <svg
                             className="h-3.5 w-3.5"
@@ -655,12 +702,8 @@ export default function InformasiUmumContent({
                     {i < STATUS_OPTIONS.length - 1 && (
                       <div
                         className={`h-0.5 flex-1 transition-all ${
-                          i <
-                          STATUS_OPTIONS.findIndex(
-                            (o) => o.value === dokumen.status,
-                          )
-                            ? "bg-emerald-300"
-                            : "bg-gray-100"
+                          // Rule 7.4: Use pre-computed currentStatusIdx instead of calling findIndex again.
+                          i < currentStatusIdx ? "bg-emerald-300" : "bg-gray-100"
                         }`}
                       />
                     )}
@@ -777,6 +820,7 @@ export default function InformasiUmumContent({
             </div>
 
             {/* Lampiran */}
+            {/* Rule 6.8: Explicit conditional rendering. */}
             {stats.totalLampiran === 0 ? (
               <div className="flex items-center gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-300">
@@ -813,38 +857,45 @@ export default function InformasiUmumContent({
                     )}
                   </div>
                 </div>
-                {dokumen.lampirans
-                  .slice()
-                  .sort((a, b) => a.urutan - b.urutan)
-                  .map((l) => (
-                    <div
-                      key={l.id}
-                      className="flex items-center gap-3 bg-white px-4 py-3"
-                    >
-                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-bold text-indigo-600">
-                        {l.romawiLampiran}
-                      </span>
-                      <p className="flex-1 truncate text-xs text-gray-700">
-                        {l.judulPembatasLampiran}
-                      </p>
-                      <div className="flex flex-shrink-0 items-center gap-2">
-                        {l.isCALK && (
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 ring-1 ring-emerald-200">
-                            CALK
-                          </span>
-                        )}
-                        <span className="text-[11px] text-gray-400">
-                          {l.jumlahHalaman} hlm
+                {/* Rule 7.12: Use pre-memoized toSorted() result instead of .slice().sort() inline. */}
+                {sortedLampirans.map((l) => (
+                  <div
+                    key={l.id}
+                    className="flex items-center gap-3 bg-white px-4 py-3"
+                  >
+                    <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-indigo-50 text-[10px] font-bold text-indigo-600">
+                      {l.romawiLampiran}
+                    </span>
+                    <p className="flex-1 truncate text-xs text-gray-700">
+                      {l.judulPembatasLampiran}
+                    </p>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      {l.isCALK && (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600 ring-1 ring-emerald-200">
+                          CALK
                         </span>
-                      </div>
+                      )}
+                      <span className="text-[11px] text-gray-400">
+                        {l.jumlahHalaman} hlm
+                      </span>
                     </div>
-                  ))}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </SectionCard>
 
         {/* ── METADATA SISTEM ── */}
+        {/*
+          Rule 6.5: Prevent Hydration Mismatch Without Flickering.
+          Three values here are inherently client-only:
+          1. dokumen.id  — UUID generated on the client; server renders a stale/different value.
+          2. createdAt / updatedAt formatted with toLocaleString("id-ID") — locale resolution
+             differs between Node.js (server) and the browser, producing different strings.
+          suppressHydrationWarning tells React to skip the mismatch check on these specific
+          leaf nodes and accept the client value without a full tree regeneration.
+        */}
         <div className="rounded-2xl border border-gray-100 bg-white/60 px-6 py-5">
           <p className="mb-4 text-[11px] font-semibold tracking-widest text-gray-400 uppercase">
             Metadata Sistem
@@ -852,13 +903,18 @@ export default function InformasiUmumContent({
           <div className="grid grid-cols-3 gap-4 text-xs">
             <div>
               <p className="font-medium text-gray-400">ID Dokumen</p>
-              <p className="mt-0.5 font-mono break-all text-gray-600">
+              {/* suppressHydrationWarning: UUID always differs between server and client renders */}
+              <p
+                className="mt-0.5 font-mono break-all text-gray-600"
+                suppressHydrationWarning
+              >
                 {dokumen.id}
               </p>
             </div>
             <div>
               <p className="font-medium text-gray-400">Dibuat</p>
-              <p className="mt-0.5 text-gray-600">
+              {/* suppressHydrationWarning: toLocaleString("id-ID") output differs between Node.js and browser */}
+              <p className="mt-0.5 text-gray-600" suppressHydrationWarning>
                 {new Date(dokumen.createdAt).toLocaleString("id-ID", {
                   dateStyle: "medium",
                   timeStyle: "short",
@@ -867,7 +923,8 @@ export default function InformasiUmumContent({
             </div>
             <div>
               <p className="font-medium text-gray-400">Terakhir Diperbarui</p>
-              <p className="mt-0.5 text-gray-600">
+              {/* suppressHydrationWarning: same locale mismatch as createdAt */}
+              <p className="mt-0.5 text-gray-600" suppressHydrationWarning>
                 {new Date(dokumen.updatedAt).toLocaleString("id-ID", {
                   dateStyle: "medium",
                   timeStyle: "short",

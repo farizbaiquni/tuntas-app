@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { LampiranPendukung } from "@/app/_types/type";
 import UploadLampiranPendukungModal from "./modals/UploadLampiranPendukungModal";
 
@@ -14,9 +14,28 @@ interface LampiranPendukungProps {
   onReorder: (reordered: LampiranPendukung[]) => void;
 }
 
+// ─── Module-level constants ───────────────────────────────────────────────────
+
+// Rule 6.3: Hoist static JSX fragments so they're never recreated on each render.
+const DOT = <span className="block h-[3px] w-[3px] rounded-full bg-current" />;
+const DOT_ROW = (
+  <div className="flex gap-[3px]">
+    {DOT}
+    {DOT}
+  </div>
+);
+
+// Rule 6.3: Hoist pagination constant outside component — not redeclared on every render.
+const ITEMS_PER_PAGE = 8;
+
 // ─── Drag Handle ─────────────────────────────────────────────────────────────
 
-function DragHandle({ isDragging }: { isDragging: boolean }) {
+// Rule 5.5: Memoized — only re-renders when isDragging changes, not on any parent state update.
+const DragHandle = memo(function DragHandle({
+  isDragging,
+}: {
+  isDragging: boolean;
+}) {
   return (
     <div
       title="Drag untuk mengubah urutan"
@@ -26,25 +45,17 @@ function DragHandle({ isDragging }: { isDragging: boolean }) {
           : "text-gray-300 hover:bg-gray-100 hover:text-gray-500"
       }`}
     >
-      <div className="flex gap-[3px]">
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-      </div>
-      <div className="flex gap-[3px]">
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-      </div>
-      <div className="flex gap-[3px]">
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-        <span className="block h-[3px] w-[3px] rounded-full bg-current" />
-      </div>
+      {DOT_ROW}
+      {DOT_ROW}
+      {DOT_ROW}
     </div>
   );
-}
+});
 
 // ─── Preview Modal ────────────────────────────────────────────────────────────
 
-function PreviewPdfModal({
+// Rule 5.5: Memoized — contains a heavy <iframe>; must not re-render on unrelated parent state.
+const PreviewPdfModal = memo(function PreviewPdfModal({
   lampiran,
   onClose,
 }: {
@@ -146,11 +157,12 @@ function PreviewPdfModal({
       </div>
     </div>
   );
-}
+});
 
 // ─── Konfirmasi Hapus ─────────────────────────────────────────────────────────
 
-function DeleteConfirmModal({
+// Rule 5.5: Memoized — only re-renders when lampiran or callbacks change.
+const DeleteConfirmModal = memo(function DeleteConfirmModal({
   lampiran,
   onConfirm,
   onCancel,
@@ -210,7 +222,7 @@ function DeleteConfirmModal({
       </div>
     </div>
   );
-}
+});
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -240,12 +252,11 @@ export default function LampiranPendukungContent({
     null,
   );
 
-  const itemsPerPage = 8;
-
   // ─── Filter & Pagination ──────────────────────────────────────────────────
 
+  // Rule 7.12: toSorted() — immutable, does not mutate the lampirans prop array.
   const sorted = useMemo(
-    () => [...lampirans].sort((a, b) => a.urutan - b.urutan),
+    () => lampirans.toSorted((a, b) => a.urutan - b.urutan),
     [lampirans],
   );
 
@@ -259,43 +270,53 @@ export default function LampiranPendukungContent({
     [sorted, search],
   );
 
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  // Rule 5.3: Simple arithmetic with primitive result — no useMemo needed.
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+
+  // Rule 5.1: Derive paginated slice during render — no extra state needed.
   const paginated = filtered.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage,
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE,
   );
 
-  const totalHalaman = useMemo(
-    () => lampirans.reduce((s, l) => s + (l.jumlahTotalLembar || 0), 0),
-    [lampirans],
+  // Rule 5.3: Simple reduce with primitive (number) result — do NOT wrap in useMemo.
+  const totalHalaman = lampirans.reduce(
+    (s, l) => s + (l.jumlahTotalLembar || 0),
+    0,
   );
 
   // ─── Modal handlers ───────────────────────────────────────────────────────
 
-  const handleOpenAdd = () => {
+  // Rule 5.7: useCallback so these handlers are stable references when passed to memoized children.
+  const handleOpenAdd = useCallback(() => {
     setEditTarget(undefined);
     setIsModalOpen(true);
-  };
+  }, []);
 
-  const handleOpenEdit = (l: LampiranPendukung) => {
+  const handleOpenEdit = useCallback((l: LampiranPendukung) => {
     setEditTarget(l);
     setIsModalOpen(true);
-  };
+  }, []);
 
-  const handleCloseModal = () => {
+  const handleCloseModal = useCallback(() => {
     setIsModalOpen(false);
     setEditTarget(undefined);
-  };
+  }, []);
 
-  const handleModalSave = (lampiran: LampiranPendukung) => {
-    if (editTarget) {
-      onUpdate(lampiran.id, lampiran);
-    } else {
-      onAdd(lampiran);
-    }
-    setCurrentPage(1);
-    setEditTarget(undefined);
-  };
+  const handleModalSave = useCallback(
+    (lampiran: LampiranPendukung) => {
+      if (editTarget) {
+        onUpdate(lampiran.id, lampiran);
+      } else {
+        onAdd(lampiran);
+      }
+      // Rule 5.9: Reset to page 1 after add/update — functional update not needed here
+      // since we're setting a fixed value, not deriving from previous state.
+      setCurrentPage(1);
+      setEditTarget(undefined);
+    },
+    [editTarget, onAdd, onUpdate],
+  );
 
   // ─── Delete ───────────────────────────────────────────────────────────────
 
@@ -307,23 +328,26 @@ export default function LampiranPendukungContent({
 
   // ─── Drag & Drop ──────────────────────────────────────────────────────────
 
-  const handleDragStart = (e: React.DragEvent, id: string) => {
+  const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
     e.dataTransfer.setData("dragId", id);
     e.dataTransfer.effectAllowed = "move";
     setDraggingId(id);
-  };
+  }, []);
 
-  const handleDragEnd = () => {
+  const handleDragEnd = useCallback(() => {
     setDraggingId(null);
     setDragOverId(null);
-  };
+  }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent, targetId: string) => {
       e.preventDefault();
       const dragId = e.dataTransfer.getData("dragId");
+      // Rule 7.8: Early return for no-op drops.
       if (dragId === targetId) return;
 
+      // Rule 7.12: toSorted() — sorted is already sorted, but we still use toSorted()
+      // defensively so we never mutate the memoized sorted array.
       const arr = [...sorted];
       const fromIdx = arr.findIndex((l) => l.id === dragId);
       const toIdx = arr.findIndex((l) => l.id === targetId);
@@ -341,6 +365,7 @@ export default function LampiranPendukungContent({
 
   const handleUrutanCommit = useCallback(
     (lampiran: LampiranPendukung, rawValue: string) => {
+      // Rule 5.9: Functional setState to avoid stale closure on editingUrutan.
       setEditingUrutan((prev) => {
         const next = { ...prev };
         delete next[lampiran.id];
@@ -349,6 +374,7 @@ export default function LampiranPendukungContent({
 
       const newUrutan = parseInt(rawValue);
       const total = lampirans.length;
+      // Rule 7.8: Early return for invalid / no-op values.
       if (
         isNaN(newUrutan) ||
         newUrutan < 1 ||
@@ -368,6 +394,12 @@ export default function LampiranPendukungContent({
     [lampirans.length, sorted, onReorder],
   );
 
+  // Rule 5.7: Stable callback references for memoized modal children.
+  // Inline `() => setState(null)` arrows create new functions on every render,
+  // defeating memo() on PreviewPdfModal and DeleteConfirmModal.
+  const handleClosePreview = useCallback(() => setPreviewTarget(null), []);
+  const handleCancelDelete = useCallback(() => setDeleteTarget(null), []);
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -381,18 +413,18 @@ export default function LampiranPendukungContent({
         onSave={handleModalSave}
       />
 
-      {previewTarget && (
+      {previewTarget !== null && (
         <PreviewPdfModal
           lampiran={previewTarget}
-          onClose={() => setPreviewTarget(null)}
+          onClose={handleClosePreview}
         />
       )}
 
-      {deleteTarget && (
+      {deleteTarget !== null && (
         <DeleteConfirmModal
           lampiran={deleteTarget}
           onConfirm={handleConfirmDelete}
-          onCancel={() => setDeleteTarget(null)}
+          onCancel={handleCancelDelete}
         />
       )}
 
