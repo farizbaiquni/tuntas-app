@@ -36,7 +36,9 @@ function halamanBernomorOf(l: LampiranUtama): number {
 export function buildDaftarIsiEntries(
   lampirans: LampiranUtama[],
 ): DaftarIsiEntry[] {
-  const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
+  const sorted = [...lampirans]
+    .filter((l) => !l.isCoverInduk)   // cover induk tidak masuk daftar isi
+    .sort((a, b) => a.urutan - b.urutan);
   let cursor = 1; // nomor halaman berjalan
 
   return sorted.map((l) => {

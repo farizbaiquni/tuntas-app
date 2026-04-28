@@ -122,11 +122,20 @@ export default function LampiranUtamaContent({
 
   // ─── Modal handlers ───────────────────────────────────────────────────────
 
-  const handleModalSave = (lampiran: LampiranUtama) => {
+  const handleModalSave = (lampiran: LampiranUtama | LampiranUtama[]) => {
     if (editTarget) {
-      onUpdate(lampiran.id, lampiran);
+      // Edit mode: selalu single
+      const single = Array.isArray(lampiran) ? lampiran[0] : lampiran;
+      onUpdate(single.id, single);
     } else {
-      onAdd(lampiran);
+      // Add mode: bisa array [coverInduk, lampiran] atau single
+      if (Array.isArray(lampiran)) {
+        // Re-index urutan berdasarkan posisi saat ini
+        const baseUrutan = lampirans.length + 1;
+        lampiran.forEach((l, i) => onAdd({ ...l, urutan: baseUrutan + i }));
+      } else {
+        onAdd(lampiran);
+      }
     }
     setCurrentPage(1);
     setEditTarget(undefined);
@@ -153,6 +162,8 @@ export default function LampiranUtamaContent({
     async (sorted: LampiranUtama[], fromIdx: number) => {
       // Rule 7.6: Combine flatMap+reduce into a single pass to count skipped pages.
       const halamanBernomorOf = (l: LampiranUtama): number => {
+        // Cover induk tidak diberi nomor halaman
+        if (l.isCoverInduk) return 0;
         const totalPdf = l.jumlahHalaman || 0;
         let totalSkip = 0;
         for (const b of l.babs) {
@@ -172,6 +183,8 @@ export default function LampiranUtamaContent({
 
       for (let i = fromIdx; i < sorted.length; i++) {
         const lampiran = sorted[i];
+        // Cover induk tidak diberi footer/nomor halaman — skip
+        if (lampiran.isCoverInduk) continue;
         if (!lampiran.rawFileUrl) continue;
 
         try {
@@ -224,6 +237,16 @@ export default function LampiranUtamaContent({
                 font,
                 color: rgb(0, 0, 0),
               });
+              const ket = `Lampiran ${romawiLampiran} — ${judulPembatasLampiran}`;
+              const ks = Math.max(footer.fontSize - 2, 6);
+              const kw = font.widthOfTextAtSize(ket, ks);
+              page.drawText(ket, {
+                x: rightEdge - kw - 5,
+                y: lineY - ks - 3,
+                size: ks,
+                font,
+                color: rgb(0.3, 0.3, 0.3),
+              });
             } else {
               page.drawRectangle({
                 x: xPos,
@@ -249,6 +272,16 @@ export default function LampiranUtamaContent({
                 size: footer.fontSize,
                 font,
                 color: rgb(0, 0, 0),
+              });
+              const ket = `Lampiran ${romawiLampiran} — ${judulPembatasLampiran}`;
+              const ks = Math.max(footer.fontSize - 2, 6);
+              const kw = font.widthOfTextAtSize(ket, ks);
+              page.drawText(ket, {
+                x: xPos + (boxWidth - kw) / 2,
+                y: yPos - ks - 3,
+                size: ks,
+                font,
+                color: rgb(0.3, 0.3, 0.3),
               });
             }
 
@@ -371,6 +404,8 @@ export default function LampiranUtamaContent({
 
   // Rule 7.6: Inline helper to avoid repeated closure allocation on hot path.
   const halamanDiberiNomorOf = (l: LampiranUtama): number => {
+    // Cover induk tidak diberi nomor halaman
+    if (l.isCoverInduk) return 0;
     const halamanSkip = l.babs
       .flatMap((b) => b.lampiranCalk ?? [])
       .reduce((sum, lc) => {
@@ -383,13 +418,11 @@ export default function LampiranUtamaContent({
   };
 
   const startPageForNew = useMemo(() => {
-    // Rule 7.12: toSorted() for immutability.
     const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
     return sorted.reduce((acc, l) => acc + halamanDiberiNomorOf(l), 1);
   }, [lampirans]);
 
   const getStartPageForEdit = (lampiran: LampiranUtama): number => {
-    // Rule 7.12: toSorted() for immutability.
     const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
     let page = 1;
     for (const l of sorted) {

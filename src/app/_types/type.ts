@@ -93,6 +93,10 @@ export interface LampiranUtama {
   jumlahTotalLembar: number;
   isCALK: boolean;
   babs: BabCalk[];
+  /** Jika true, entri ini adalah cover induk opsional (misal LAMPIRAN I)
+   *  yang diletakkan sebelum sub-lampiran (LAMPIRAN I.1, I.2, dst).
+   *  Cover induk TIDAK diberi nomor halaman footer dan tidak muncul di daftar isi. */
+  isCoverInduk?: boolean;
 }
 
 export interface DokumenLaporan {

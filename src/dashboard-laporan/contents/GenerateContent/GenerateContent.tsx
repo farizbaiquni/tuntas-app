@@ -769,10 +769,6 @@ export default function GenerateContent({
         try {
           if (!l.fileUrl) throw new Error("URL tidak ditemukan");
 
-          // Rule 1.4: Start the fetch before building the cover page so the network
-          // request overlaps with the synchronous PDF drawing work.
-          const fetchPromise = fetch(l.fileUrl).then((r) => r.arrayBuffer());
-
           buildCoverLampiran(
             merged,
             l,
@@ -784,16 +780,22 @@ export default function GenerateContent({
             pageSize,
           );
 
-          // Now await the already-in-flight fetch result.
-          const src = await PDFDocument.load(await fetchPromise, {
-            ignoreEncryption: true,
-          });
-          (await merged.copyPages(src, src.getPageIndices())).forEach((p) =>
-            merged.addPage(p),
-          );
+          // Cover induk: hanya halaman cover pembatas, tanpa PDF isi
+          if (!l.isCoverInduk) {
+            const src = await PDFDocument.load(
+              await fetch(l.fileUrl).then((r) => r.arrayBuffer()),
+              { ignoreEncryption: true },
+            );
+            (await merged.copyPages(src, src.getPageIndices())).forEach((p) =>
+              merged.addPage(p),
+            );
+          }
+
           updateStep(l.id, {
             status: "done",
-            detail: `1 cover + ${l.jumlahHalaman} halaman ✓`,
+            detail: l.isCoverInduk
+              ? "1 cover induk ✓"
+              : `1 cover + ${l.jumlahHalaman} halaman ✓`,
           });
         } catch (err) {
           updateStep(l.id, {

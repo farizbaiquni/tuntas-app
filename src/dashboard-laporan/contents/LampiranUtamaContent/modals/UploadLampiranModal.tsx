@@ -27,7 +27,7 @@ type Props = {
   nextUrutan: number;
   startPage?: number;
   editData?: LampiranUtama;
-  onSave: (lampiran: LampiranUtama) => void;
+  onSave: (lampiran: LampiranUtama | LampiranUtama[]) => void;
 };
 
 type FormInfo = {
@@ -42,6 +42,12 @@ type FormInfo = {
   positionY: number;
   fontSize: number;
   footerHeight: number;
+  /** Apakah user ingin menambahkan cover induk sebelum lampiran ini */
+  enableCoverInduk: boolean;
+  /** Romawi untuk cover induk, misal "I" */
+  coverIndukRomawi: string;
+  /** Judul untuk cover induk, misal "ANGGARAN PENDAPATAN DAN BELANJA DAERAH" */
+  coverIndukJudul: string;
 };
 
 type FormErrors = Partial<Record<"dividerTitle" | "footerNote", string>>;
@@ -109,6 +115,9 @@ function getDefaultForm(urutan: number): FormInfo {
     positionY: 27,
     fontSize: 8,
     footerHeight: 20,
+    enableCoverInduk: false,
+    coverIndukRomawi: "",
+    coverIndukJudul: "",
   };
 }
 
@@ -125,6 +134,9 @@ function lampiranToForm(l: LampiranUtama): FormInfo {
     positionY: l.footer.position.y,
     fontSize: l.footer.fontSize,
     footerHeight: l.footer.height,
+    enableCoverInduk: false,
+    coverIndukRomawi: "",
+    coverIndukJudul: "",
   };
 }
 
@@ -311,6 +323,25 @@ export default function UploadLampiranUtamaModal({
     return URL.createObjectURL(blob);
   };
 
+  /** Buat PDF 1 halaman kosong untuk cover induk (tanpa footer/nomor halaman) */
+  const generateCoverIndukPdf = async (): Promise<string> => {
+    // Ambil ukuran halaman dari PDF lampiran sebagai referensi
+    const bytes = selectedFile
+      ? await selectedFile.arrayBuffer()
+      : await (await fetch(editData!.rawFileUrl)).arrayBuffer();
+    const srcDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const [srcPage] = srcDoc.getPages();
+    const { width: pw, height: ph } = srcPage.getSize();
+
+    const coverDoc = await PDFDocument.create();
+    coverDoc.addPage([pw, ph]);
+
+    const blob = new Blob([new Uint8Array(await coverDoc.save()).buffer], {
+      type: "application/pdf",
+    });
+    return URL.createObjectURL(blob);
+  };
+
   const handleSave = async () => {
     // Rule 7.8: Early return for missing file in add mode.
     if (!isEditMode && !selectedFile) return;
@@ -336,7 +367,6 @@ export default function UploadLampiranUtamaModal({
         position: { x: formInfo.offsetX, y: formInfo.positionY },
         fontSize: formInfo.fontSize,
       };
-      // Merge lampiransCalk into babs[0] (persisted separately for skip-range logic)
       const babsCalk: BabCalk[] = formInfo.isCalk
         ? formInfo.babs
             .map((b, i) =>
@@ -388,9 +418,34 @@ export default function UploadLampiranUtamaModal({
             jumlahTotalLembar: 0,
             isCALK: formInfo.isCalk,
             babs: babsCalk,
+            isCoverInduk: false,
           };
 
-      onSave(lampiran);
+      // Jika cover induk diaktifkan (hanya mode tambah baru, bukan edit)
+      if (!isEditMode && formInfo.enableCoverInduk) {
+        const coverUrl = await generateCoverIndukPdf();
+        const coverInduk: LampiranUtama = {
+          id: crypto.randomUUID(),
+          urutan: nextUrutan,         // urutan sementara; parent akan re-index
+          fileUrl: coverUrl,
+          rawFileUrl: coverUrl,
+          namaFileDiStorageLokal: `cover-induk-${formInfo.coverIndukRomawi}.pdf`,
+          ukuranFile: "—",
+          romawiLampiran: formInfo.coverIndukRomawi,
+          judulPembatasLampiran: formInfo.coverIndukJudul,
+          footer,
+          jumlahHalaman: 1,
+          jumlahTotalLembar: 1,
+          isCALK: false,
+          babs: [],
+          isCoverInduk: true,
+        };
+        // Kirim array [coverInduk, lampiran] — parent handle urutan
+        onSave([coverInduk, lampiran]);
+      } else {
+        onSave(lampiran);
+      }
+
       onClose();
     } catch (e) {
       console.error("Gagal apply footer:", e);
@@ -653,6 +708,65 @@ export default function UploadLampiranUtamaModal({
                         </p>
                       </div>
                     </label>
+
+                    {/* Cover Induk toggle — hanya tampil saat tambah baru */}
+                    {!isEditMode && (
+                      <div className="space-y-3 rounded-xl border border-violet-200 bg-violet-50/40 p-5">
+                        <label className="flex cursor-pointer items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={formInfo.enableCoverInduk}
+                            onChange={(e) =>
+                              handleFieldChange("enableCoverInduk", e.target.checked)
+                            }
+                            className="h-5 w-5 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                          />
+                          <div>
+                            <span className="text-base font-medium text-gray-700">
+                              Tambahkan Cover Induk sebelum lampiran ini
+                            </span>
+                            <p className="text-sm text-gray-500">
+                              Misal: Cover <strong>LAMPIRAN I</strong> sebelum{" "}
+                              <strong>LAMPIRAN I.1</strong> — tidak diberi nomor
+                              halaman & tidak muncul di daftar isi
+                            </p>
+                          </div>
+                        </label>
+
+                        {formInfo.enableCoverInduk && (
+                          <div className="mt-3 grid grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                              <label className="block text-sm font-medium text-violet-700">
+                                Romawi Cover Induk
+                              </label>
+                              <input
+                                type="text"
+                                value={formInfo.coverIndukRomawi}
+                                onChange={(e) =>
+                                  handleFieldChange("coverIndukRomawi", e.target.value)
+                                }
+                                placeholder=""
+                                className="w-full rounded-xl border border-violet-200 px-4 py-3 text-base focus:border-violet-400 focus:ring-1 focus:ring-violet-400 focus:outline-none"
+                              />
+                            </div>
+                            <div className="col-span-2 space-y-2">
+                              <label className="block text-sm font-medium text-violet-700">
+                                Judul Cover Induk
+                              </label>
+                              <input
+                                type="text"
+                                value={formInfo.coverIndukJudul}
+                                onChange={(e) =>
+                                  handleFieldChange("coverIndukJudul", e.target.value)
+                                }
+                                placeholder=""
+                                className="w-full rounded-xl border border-violet-200 px-4 py-3 text-base focus:border-violet-400 focus:ring-1 focus:ring-violet-400 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Lampiran CALK section */}
                     {formInfo.isCalk && (
