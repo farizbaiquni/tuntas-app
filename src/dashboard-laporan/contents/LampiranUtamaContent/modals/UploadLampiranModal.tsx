@@ -275,15 +275,6 @@ export default function UploadLampiranUtamaModal({
           font,
           color: rgb(0, 0, 0),
         });
-        const ket = `Lampiran ${formInfo.romanPage} — ${formInfo.dividerTitle}`;
-        const ks = Math.max(fs - 2, 6);
-        page.drawText(ket, {
-          x: re - font.widthOfTextAtSize(ket, ks) - 5,
-          y: ly - ks - 3,
-          size: ks,
-          font,
-          color: rgb(0.3, 0.3, 0.3),
-        });
       } else {
         page.drawRectangle({
           x,
@@ -309,16 +300,6 @@ export default function UploadLampiranUtamaModal({
           size: fs,
           font,
           color: rgb(0, 0, 0),
-        });
-        const ket = `Lampiran ${formInfo.romanPage} — ${formInfo.dividerTitle}`;
-        const ks = Math.max(fs - 2, 6);
-        const kw = font.widthOfTextAtSize(ket, ks);
-        page.drawText(ket, {
-          x: x + (bw - kw) / 2,
-          y: y - ks - 3,
-          size: ks,
-          font,
-          color: rgb(0.3, 0.3, 0.3),
         });
       }
       counter++;

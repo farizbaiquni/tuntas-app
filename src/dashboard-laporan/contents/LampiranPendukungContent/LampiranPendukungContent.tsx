@@ -256,7 +256,7 @@ export default function LampiranPendukungContent({
 
   // Rule 7.12: toSorted() — immutable, does not mutate the lampirans prop array.
   const sorted = useMemo(
-    () => lampirans.toSorted((a, b) => a.urutan - b.urutan),
+    () => [...lampirans].sort((a, b) => a.urutan - b.urutan),
     [lampirans],
   );
 

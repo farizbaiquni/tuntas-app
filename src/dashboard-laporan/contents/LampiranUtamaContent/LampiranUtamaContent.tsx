@@ -224,16 +224,6 @@ export default function LampiranUtamaContent({
                 font,
                 color: rgb(0, 0, 0),
               });
-              const ket = `Lampiran ${romawiLampiran} — ${judulPembatasLampiran}`;
-              const ks = Math.max(footer.fontSize - 2, 6);
-              const kw = font.widthOfTextAtSize(ket, ks);
-              page.drawText(ket, {
-                x: rightEdge - kw - 5,
-                y: lineY - ks - 3,
-                size: ks,
-                font,
-                color: rgb(0.3, 0.3, 0.3),
-              });
             } else {
               page.drawRectangle({
                 x: xPos,
@@ -259,16 +249,6 @@ export default function LampiranUtamaContent({
                 size: footer.fontSize,
                 font,
                 color: rgb(0, 0, 0),
-              });
-              const ket = `Lampiran ${romawiLampiran} — ${judulPembatasLampiran}`;
-              const ks = Math.max(footer.fontSize - 2, 6);
-              const kw = font.widthOfTextAtSize(ket, ks);
-              page.drawText(ket, {
-                x: xPos + (boxWidth - kw) / 2,
-                y: yPos - ks - 3,
-                size: ks,
-                font,
-                color: rgb(0.3, 0.3, 0.3),
               });
             }
 
@@ -311,7 +291,7 @@ export default function LampiranUtamaContent({
       if (dragId === targetId) return;
 
       // Rule 7.12: toSorted() instead of [...arr] + .sort() to avoid double allocation.
-      const arr = lampirans.toSorted((a, b) => a.urutan - b.urutan);
+      const arr = [...lampirans].sort((a, b) => a.urutan - b.urutan);
       const fromIdx = arr.findIndex((l) => l.id === dragId);
       const toIdx = arr.findIndex((l) => l.id === targetId);
       const mutable = [...arr];
@@ -351,7 +331,7 @@ export default function LampiranUtamaContent({
         return;
 
       // Rule 7.12: Use toSorted() for immutability — does not mutate the lampirans prop.
-      const sorted = lampirans.toSorted((a, b) => a.urutan - b.urutan);
+      const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
       const oldIdx = sorted.findIndex((l) => l.id === lampiran.id);
       const newIdx = newUrutan - 1;
 
@@ -374,7 +354,7 @@ export default function LampiranUtamaContent({
   const handleRemove = useCallback(
     (lampiran: LampiranUtama) => {
       // Rule 7.12: toSorted() instead of [...arr].sort() for immutability.
-      const sorted = lampirans.toSorted((a, b) => a.urutan - b.urutan);
+      const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
       const removedIdx = sorted.findIndex((l) => l.id === lampiran.id);
       onRemove(lampiran.id);
       const remaining = sorted
@@ -404,13 +384,13 @@ export default function LampiranUtamaContent({
 
   const startPageForNew = useMemo(() => {
     // Rule 7.12: toSorted() for immutability.
-    const sorted = lampirans.toSorted((a, b) => a.urutan - b.urutan);
+    const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
     return sorted.reduce((acc, l) => acc + halamanDiberiNomorOf(l), 1);
   }, [lampirans]);
 
   const getStartPageForEdit = (lampiran: LampiranUtama): number => {
     // Rule 7.12: toSorted() for immutability.
-    const sorted = lampirans.toSorted((a, b) => a.urutan - b.urutan);
+    const sorted = [...lampirans].sort((a, b) => a.urutan - b.urutan);
     let page = 1;
     for (const l of sorted) {
       // Rule 7.8: Early return pattern.

@@ -619,13 +619,13 @@ export default function GenerateContent({
 
   // Rule 7.12: toSorted() — immutable sort, does not mutate the lampirans prop array.
   const sorted = useMemo(
-    () => lampirans.toSorted((a, b) => a.urutan - b.urutan),
+    () => [...lampirans].sort((a, b) => a.urutan - b.urutan),
     [lampirans],
   );
 
   // Rule 7.12: toSorted() — immutable sort, does not mutate the lampiransPendukung prop array.
   const sortedPendukung = useMemo(
-    () => lampiransPendukung.toSorted((a, b) => a.urutan - b.urutan),
+    () => [...lampiransPendukung].sort((a, b) => a.urutan - b.urutan),
     [lampiransPendukung],
   );
 

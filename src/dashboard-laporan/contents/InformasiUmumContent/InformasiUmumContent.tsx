@@ -273,7 +273,7 @@ export default function InformasiUmumContent({
 
   // Rule 7.12: Use toSorted() for immutability — avoids mutating dokumen.lampirans prop array.
   const sortedLampirans = useMemo(
-    () => dokumen.lampirans.toSorted((a, b) => a.urutan - b.urutan),
+    () => [...dokumen.lampirans].sort((a, b) => a.urutan - b.urutan),
     [dokumen.lampirans],
   );
 
