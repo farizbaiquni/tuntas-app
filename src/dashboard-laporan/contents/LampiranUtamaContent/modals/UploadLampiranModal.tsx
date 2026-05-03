@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import {
   ChevronUpIcon,
@@ -17,6 +17,8 @@ import {
   LampiranCalk,
   BabCalk,
   SubbabCalk,
+  HeaderTtdConfig,
+  JenisLaporan,
 } from "@/app/_types/type";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -27,6 +29,9 @@ type Props = {
   nextUrutan: number;
   startPage?: number;
   editData?: LampiranUtama;
+  namaDaerah: string;
+  namaKepalaDaerah: string;
+  jenisLaporan: JenisLaporan;
   onSave: (lampiran: LampiranUtama | LampiranUtama[]) => void;
 };
 
@@ -42,12 +47,10 @@ type FormInfo = {
   positionY: number;
   fontSize: number;
   footerHeight: number;
-  /** Apakah user ingin menambahkan cover induk sebelum lampiran ini */
   enableCoverInduk: boolean;
-  /** Romawi untuk cover induk, misal "I" */
   coverIndukRomawi: string;
-  /** Judul untuk cover induk, misal "ANGGARAN PENDAPATAN DAN BELANJA DAERAH" */
   coverIndukJudul: string;
+  headerTtd: HeaderTtdConfig;
 };
 
 type FormErrors = Partial<Record<"dividerTitle" | "footerNote", string>>;
@@ -102,6 +105,32 @@ async function readPdfPageCount(file: File): Promise<number> {
   }
 }
 
+const DEFAULT_HEADER_TTD: HeaderTtdConfig = {
+  enabled: false,
+  nomor: "",
+  tanggal: "",
+  header: { fontSize: 9, marginRight: 70, marginTop: 48 },
+  ttd: { fontSize: 10, marginRight: 42, marginBottom: 72 },
+};
+
+// Helper: Title Case setiap kata kecuali romawi (semua huruf sama)
+function toTitleCase(str: string): string {
+  return str
+    .toLowerCase()
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+const LABEL_JENIS_MAP: Record<JenisLaporan, string> = {
+  [JenisLaporan.RAPERDA]:       "Rancangan Peraturan Daerah Kabupaten",
+  [JenisLaporan.PERDA]:         "Peraturan Daerah Kabupaten",
+  [JenisLaporan.SALINAN_PERDA]: "Salinan Peraturan Daerah Kabupaten",
+  [JenisLaporan.RAPERBUP]:      "Rancangan Peraturan Bupati",
+  [JenisLaporan.PERBUP]:        "Peraturan Bupati",
+  [JenisLaporan.SALINAN_PERBUP]:"Salinan Peraturan Bupati",
+};
+
 function getDefaultForm(urutan: number): FormInfo {
   return {
     isCalk: false,
@@ -118,6 +147,7 @@ function getDefaultForm(urutan: number): FormInfo {
     enableCoverInduk: false,
     coverIndukRomawi: "",
     coverIndukJudul: "",
+    headerTtd: { ...DEFAULT_HEADER_TTD },
   };
 }
 
@@ -137,6 +167,7 @@ function lampiranToForm(l: LampiranUtama): FormInfo {
     enableCoverInduk: false,
     coverIndukRomawi: "",
     coverIndukJudul: "",
+    headerTtd: l.headerTtd ?? { ...DEFAULT_HEADER_TTD },
   };
 }
 
@@ -157,6 +188,9 @@ export default function UploadLampiranUtamaModal({
   nextUrutan,
   startPage = 1,
   editData,
+  namaDaerah,
+  namaKepalaDaerah,
+  jenisLaporan,
   onSave,
 }: Props) {
   const isEditMode = !!editData;
@@ -182,6 +216,17 @@ export default function UploadLampiranUtamaModal({
   );
   const [isReadingPdf, setIsReadingPdf] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [headerTtdPreviewUrl, setHeaderTtdPreviewUrl] = useState<string | null>(null);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  const [isGeneratingFooterPreview, setIsGeneratingFooterPreview] = useState(false);
+  const [rawFileUrl, setRawFileUrl] = useState<string | null>(
+    () => editData?.rawFileUrl ?? null,
+  );
+  const [leftPanelWidth, setLeftPanelWidth] = useState(60); // persen
+  const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const footerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -189,6 +234,7 @@ export default function UploadLampiranUtamaModal({
         isEditMode ? lampiranToForm(editData!) : getDefaultForm(nextUrutan),
       );
       setPreviewUrl(editData?.fileUrl ?? null);
+      setRawFileUrl(editData?.rawFileUrl ?? null);
       setSelectedFile(null);
       setErrors({});
       setActiveTab(isEditMode ? "info" : "upload");
@@ -228,16 +274,105 @@ export default function UploadLampiranUtamaModal({
     // not when onClose identity changes (handled via ref above).
   }, [isOpen, isPreviewFocus]);
 
+  // ── Auto-refresh preview Header & TTD ──────────────────────────────────────
+  // PENTING: semua hooks HARUS di atas `if (!isOpen) return null` — Rules of Hooks.
+
+  // Ref placeholder untuk applyHeaderTtdToPdf — diisi setelah fungsi didefinisikan di bawah
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const applyHeaderTtdToPdfRef = useRef<(url: string) => Promise<string>>(async (u) => u);
+
+  const generateHeaderTtdPreview = useCallback(async () => {
+    const sourceUrl = previewUrl;
+    if (!sourceUrl || !formInfo.headerTtd.enabled) {
+      setHeaderTtdPreviewUrl(null);
+      return;
+    }
+    setIsGeneratingPreview(true);
+    try {
+      const result = await applyHeaderTtdToPdfRef.current(sourceUrl);
+      setHeaderTtdPreviewUrl(result);
+    } catch (e) {
+      console.error("Preview header TTD gagal:", e);
+    } finally {
+      setIsGeneratingPreview(false);
+    }
+  }, [previewUrl, formInfo.headerTtd]);
+
+  const generatePreviewRef = useRef(generateHeaderTtdPreview);
+  useEffect(() => { generatePreviewRef.current = generateHeaderTtdPreview; }, [generateHeaderTtdPreview]);
+
+  useEffect(() => {
+    if ((activeTab as string) !== "headerttd") return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      generatePreviewRef.current();
+    }, 800);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [formInfo.headerTtd, activeTab]);
+
+  // ── Debounce footer preview ─────────────────────────────────────────────────
+  const applyFooterToPdfRef = useRef<(url: string) => Promise<string>>(async (u) => u);
+
+  const generateFooterPreview = useCallback(async () => {
+    const src = rawFileUrl;
+    if (!src) return;
+    setIsGeneratingFooterPreview(true);
+    try {
+      const result = await applyFooterToPdfRef.current(src);
+      setPreviewUrl(result);
+    } catch (e) {
+      console.error("Footer preview gagal:", e);
+    } finally {
+      setIsGeneratingFooterPreview(false);
+    }
+  }, [rawFileUrl]);
+
+  const generateFooterPreviewRef = useRef(generateFooterPreview);
+  useEffect(() => { generateFooterPreviewRef.current = generateFooterPreview; }, [generateFooterPreview]);
+
+  useEffect(() => {
+    if (!rawFileUrl) return;
+    if (footerDebounceRef.current) clearTimeout(footerDebounceRef.current);
+    footerDebounceRef.current = setTimeout(() => {
+      generateFooterPreviewRef.current();
+    }, 800);
+    return () => {
+      if (footerDebounceRef.current) clearTimeout(footerDebounceRef.current);
+    };
+  }, [formInfo.footerNote, formInfo.footerWidth, formInfo.offsetX, formInfo.positionY, formInfo.fontSize, formInfo.footerHeight, rawFileUrl]);
+
+  // ── Drag resize panel ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMouseMove = (e: MouseEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setLeftPanelWidth(Math.min(75, Math.max(25, pct)));
+    };
+    const onMouseUp = () => setIsDragging(false);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [isDragging]);
+
   if (!isOpen) return null;
 
   // ── handlers ───────────────────────────────────────────────────────────────
 
   // Rule 5.7: All interaction logic lives in the event handler — no bridging via state+effect.
   const handleFileChange = async (file: File | null) => {
-    // Rule 7.8: Early return for null file.
     if (!file) return;
     setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    const raw = URL.createObjectURL(file);
+    setRawFileUrl(raw);
+    setPreviewUrl(raw);
     setFileSize(formatFileSize(file.size));
     setActiveTab("info");
     setIsReadingPdf(true);
@@ -322,25 +457,176 @@ export default function UploadLampiranUtamaModal({
     });
     return URL.createObjectURL(blob);
   };
+  applyFooterToPdfRef.current = applyFooterToPdf;
 
-  /** Buat PDF 1 halaman kosong untuk cover induk (tanpa footer/nomor halaman) */
-  const generateCoverIndukPdf = async (): Promise<string> => {
-    // Ambil ukuran halaman dari PDF lampiran sebagai referensi
-    const bytes = selectedFile
-      ? await selectedFile.arrayBuffer()
-      : await (await fetch(editData!.rawFileUrl)).arrayBuffer();
-    const srcDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
-    const [srcPage] = srcDoc.getPages();
-    const { width: pw, height: ph } = srcPage.getSize();
+  /**
+   * Terapkan header (pojok kanan atas hal. 1) dan TTD (pojok kanan bawah hal. terakhir)
+   * ke PDF yang sudah ada. Bersifat overlay/menimpa — teks putih di-draw dulu sebagai
+   * "penghapus" lebar, kemudian teks baru di-draw di atasnya.
+   */
+  const applyHeaderTtdToPdf = async (sourceUrl: string): Promise<string> => {
+    const cfg = formInfo.headerTtd;
+    if (!cfg.enabled) return sourceUrl;
 
-    const coverDoc = await PDFDocument.create();
-    coverDoc.addPage([pw, ph]);
+    const bytes = await (await fetch(sourceUrl)).arrayBuffer();
+    const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const pages = pdfDoc.getPages();
+    if (pages.length === 0) return sourceUrl;
 
-    const blob = new Blob([new Uint8Array(await coverDoc.save()).buffer], {
+    const fs = cfg.header.fontSize;
+    const lineH = fs + 5;
+
+    // ── HEADER (halaman pertama, pojok kanan atas) ──────────────────────────
+    const firstPage = pages[0];
+    const { width: pw, height: ph } = firstPage.getSize();
+
+    // Baris pertama: "LAMPIRAN {romawi}  :  {judul peraturan}"
+    // Baris 2-3: label + titik dua SEJAJAR dengan titik dua baris pertama
+    // Teknik: ukur lebar label terpanjang, pad dengan spasi agar ":" sejajar.
+    const labelLampiran = `Lampiran ${formInfo.romanPage}`;
+    const labelNomor    = "Nomor";
+    const labelTanggal  = "Tanggal";
+
+    // Lebar label terpanjang di antara ketiganya
+    const maxLabelW = Math.max(
+      font.widthOfTextAtSize(labelLampiran, fs),
+      font.widthOfTextAtSize(labelNomor,    fs),
+      font.widthOfTextAtSize(labelTanggal,  fs),
+    );
+
+    // Fungsi padding: tambah spasi sampai lebar label mencapai maxLabelW
+    const padLabel = (label: string): string => {
+      let padded = label;
+      while (font.widthOfTextAtSize(padded + " ", fs) <= maxLabelW + 2) {
+        padded += " ";
+      }
+      return padded;
+    };
+
+    const col1W = maxLabelW + font.widthOfTextAtSize("  :  ", fs);
+
+    const headerRows: Array<{ label: string; value: string; bold: boolean }> = [
+      {
+        label: labelLampiran,
+        value: `${toTitleCase(LABEL_JENIS_MAP[jenisLaporan])} ${toTitleCase(namaDaerah)}`,
+        bold: false,
+      },
+      { label: labelNomor,   value: cfg.nomor   || "", bold: false },
+      { label: labelTanggal, value: cfg.tanggal || "", bold: false },
+    ];
+
+    // Hitung lebar teks terpanjang per baris lengkap
+    const rowTexts = headerRows.map(
+      (r) => `${padLabel(r.label)}  :  ${r.value}`,
+    );
+    const maxRowW = rowTexts.reduce(
+      (m, t) => Math.max(m, font.widthOfTextAtSize(t, fs)),
+      0,
+    );
+    const blockW = maxRowW + 16;
+    const blockH = headerRows.length * lineH + 8;
+
+    // Posisi: pojok kanan - marginRight adalah tepi KANAN blok, bukan kiri
+    const hx = pw - cfg.header.marginRight - blockW;
+    const hy = ph - cfg.header.marginTop;
+
+    // Overlay putih mentok kiri dan kanan halaman — menimpa header lama sepenuhnya
+    firstPage.drawRectangle({
+      x: 0,
+      y: hy - blockH - 8,
+      width: pw,
+      height: blockH + 16,
+      color: rgb(1, 1, 1),
+      opacity: 1,
+    });
+
+    headerRows.forEach((row, i) => {
+      const paddedLabel = padLabel(row.label);
+      const lineY = hy - lineH * (i + 1) + (lineH - fs);
+
+      // Gambar label
+      firstPage.drawText(paddedLabel, {
+        x: hx,
+        y: lineY,
+        size: fs,
+        font: row.bold ? font : fontReg,
+        color: rgb(0, 0, 0),
+      });
+
+      // Gambar "  :  " dan value di posisi kolom yang tetap
+      const colonX = hx + maxLabelW;
+      firstPage.drawText("  :  ", {
+        x: colonX,
+        y: lineY,
+        size: fs,
+        font: fontReg,
+        color: rgb(0, 0, 0),
+      });
+
+      if (row.value) {
+        firstPage.drawText(row.value, {
+          x: colonX + font.widthOfTextAtSize("  :  ", fs),
+          y: lineY,
+          size: fs,
+          font: fontReg,
+          color: rgb(0, 0, 0),
+        });
+      }
+    });
+
+    // ── TTD (halaman terakhir, pojok kanan bawah) ───────────────────────────
+    const lastPage = pages[pages.length - 1];
+    const { width: lpw } = lastPage.getSize();
+    const ttdFs = cfg.ttd.fontSize;
+    const ttdLineH = ttdFs + 5;
+
+    // 5 baris: BUPATI + 3 baris kosong (ruang TTD) + nama — semua BOLD & KAPITAL
+    const ttdLines = [
+      `BUPATI ${namaDaerah.toUpperCase()}`,
+      "", "", "",
+      namaKepalaDaerah.toUpperCase(),
+    ];
+
+    const line0W = font.widthOfTextAtSize(ttdLines[0], ttdFs);
+    const line4W = font.widthOfTextAtSize(ttdLines[4], ttdFs);
+    const maxTW = Math.max(line0W, line4W);
+    const ttdBlockW = maxTW + 16;
+    const ttdBlockH = ttdLines.length * ttdLineH + 8;
+
+    const tx = lpw - cfg.ttd.marginRight - ttdBlockW;
+    const ty = cfg.ttd.marginBottom;
+
+    lastPage.drawRectangle({
+      x: 0,
+      y: ty - 8,
+      width: lpw,
+      height: ttdBlockH + 16,
+      color: rgb(1, 1, 1),
+      opacity: 1,
+    });
+
+    ttdLines.forEach((line, i) => {
+      if (!line) return;
+      const lineW = font.widthOfTextAtSize(line, ttdFs);
+      const centeredX = tx + (maxTW - lineW) / 2;
+      lastPage.drawText(line, {
+        x: centeredX,
+        y: ty + ttdBlockH - ttdLineH * (i + 1),
+        size: ttdFs,
+        font,
+        color: rgb(0, 0, 0),
+      });
+    });
+
+    const blob = new Blob([new Uint8Array(await pdfDoc.save()).buffer], {
       type: "application/pdf",
     });
     return URL.createObjectURL(blob);
   };
+  // Isi ref agar generateHeaderTtdPreview bisa memanggil fungsi ini
+  applyHeaderTtdToPdfRef.current = applyHeaderTtdToPdf;
 
   const handleSave = async () => {
     // Rule 7.8: Early return for missing file in add mode.
@@ -359,7 +645,8 @@ export default function UploadLampiranUtamaModal({
         : isEditMode
           ? editData!.rawFileUrl
           : "";
-      const fileUrl = rawUrl ? await applyFooterToPdf(rawUrl) : "";
+      const footerUrl = rawUrl ? await applyFooterToPdf(rawUrl) : "";
+      const fileUrl = footerUrl ? await applyHeaderTtdToPdf(footerUrl) : "";
       const footer = {
         text: formInfo.footerNote,
         width: formInfo.footerWidth,
@@ -367,6 +654,7 @@ export default function UploadLampiranUtamaModal({
         position: { x: formInfo.offsetX, y: formInfo.positionY },
         fontSize: formInfo.fontSize,
       };
+      // Merge lampiransCalk into babs[0] (persisted separately for skip-range logic)
       const babsCalk: BabCalk[] = formInfo.isCalk
         ? formInfo.babs
             .map((b, i) =>
@@ -398,6 +686,7 @@ export default function UploadLampiranUtamaModal({
             babs: formInfo.isCalk ? babsCalk : editData!.babs,
             fileUrl: fileUrl || editData!.fileUrl,
             rawFileUrl: rawUrl || editData!.rawFileUrl,
+            headerTtd: formInfo.headerTtd,
             ...(selectedFile && {
               namaFileDiStorageLokal: selectedFile.name,
               ukuranFile: fileSize,
@@ -419,33 +708,10 @@ export default function UploadLampiranUtamaModal({
             isCALK: formInfo.isCalk,
             babs: babsCalk,
             isCoverInduk: false,
+            headerTtd: formInfo.headerTtd,
           };
 
-      // Jika cover induk diaktifkan (hanya mode tambah baru, bukan edit)
-      if (!isEditMode && formInfo.enableCoverInduk) {
-        const coverUrl = await generateCoverIndukPdf();
-        const coverInduk: LampiranUtama = {
-          id: crypto.randomUUID(),
-          urutan: nextUrutan,         // urutan sementara; parent akan re-index
-          fileUrl: coverUrl,
-          rawFileUrl: coverUrl,
-          namaFileDiStorageLokal: `cover-induk-${formInfo.coverIndukRomawi}.pdf`,
-          ukuranFile: "—",
-          romawiLampiran: formInfo.coverIndukRomawi,
-          judulPembatasLampiran: formInfo.coverIndukJudul,
-          footer,
-          jumlahHalaman: 1,
-          jumlahTotalLembar: 1,
-          isCALK: false,
-          babs: [],
-          isCoverInduk: true,
-        };
-        // Kirim array [coverInduk, lampiran] — parent handle urutan
-        onSave([coverInduk, lampiran]);
-      } else {
-        onSave(lampiran);
-      }
-
+      onSave(lampiran);
       onClose();
     } catch (e) {
       console.error("Gagal apply footer:", e);
@@ -507,10 +773,13 @@ export default function UploadLampiranUtamaModal({
         )}
 
         {/* BODY */}
-        <div className="flex flex-1 overflow-hidden">
+        <div ref={containerRef} className="flex flex-1 overflow-hidden">
           {/* LEFT PANEL */}
           {!isPreviewFocus && (
-            <div className="w-full overflow-y-auto border-r border-gray-100 lg:w-3/5">
+            <div
+              className="overflow-y-auto border-r border-gray-100"
+              style={{ width: `${leftPanelWidth}%`, flexShrink: 0 }}
+            >
               {/* Tabs */}
               <div className="sticky top-0 z-10 flex border-b border-gray-200 bg-white/90 px-6 pt-4 backdrop-blur-sm">
                 <button
@@ -544,6 +813,17 @@ export default function UploadLampiranUtamaModal({
                     </span>
                   </button>
                 )}
+                <button
+                  onClick={() => setActiveTab("headerttd" as any)}
+                  disabled={!isEditMode && !selectedFile}
+                  className={`relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${!isEditMode && !selectedFile ? "cursor-not-allowed text-gray-300" : activeTab === ("headerttd" as any) ? "border-b-2 border-violet-600 text-violet-600" : "text-gray-500 hover:text-gray-700"}`}
+                >
+                  <PencilIcon className="h-5 w-5" />
+                  Header & TTD
+                  {formInfo.headerTtd.enabled && (
+                    <span className="ml-1 h-2 w-2 rounded-full bg-violet-500" />
+                  )}
+                </button>
               </div>
 
               {/* Tab content */}
@@ -708,65 +988,6 @@ export default function UploadLampiranUtamaModal({
                         </p>
                       </div>
                     </label>
-
-                    {/* Cover Induk toggle — hanya tampil saat tambah baru */}
-                    {!isEditMode && (
-                      <div className="space-y-3 rounded-xl border border-violet-200 bg-violet-50/40 p-5">
-                        <label className="flex cursor-pointer items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={formInfo.enableCoverInduk}
-                            onChange={(e) =>
-                              handleFieldChange("enableCoverInduk", e.target.checked)
-                            }
-                            className="h-5 w-5 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
-                          />
-                          <div>
-                            <span className="text-base font-medium text-gray-700">
-                              Tambahkan Cover Induk sebelum lampiran ini
-                            </span>
-                            <p className="text-sm text-gray-500">
-                              Misal: Cover <strong>LAMPIRAN I</strong> sebelum{" "}
-                              <strong>LAMPIRAN I.1</strong> — tidak diberi nomor
-                              halaman & tidak muncul di daftar isi
-                            </p>
-                          </div>
-                        </label>
-
-                        {formInfo.enableCoverInduk && (
-                          <div className="mt-3 grid grid-cols-3 gap-4">
-                            <div className="space-y-2">
-                              <label className="block text-sm font-medium text-violet-700">
-                                Romawi Cover Induk
-                              </label>
-                              <input
-                                type="text"
-                                value={formInfo.coverIndukRomawi}
-                                onChange={(e) =>
-                                  handleFieldChange("coverIndukRomawi", e.target.value)
-                                }
-                                placeholder=""
-                                className="w-full rounded-xl border border-violet-200 px-4 py-3 text-base focus:border-violet-400 focus:ring-1 focus:ring-violet-400 focus:outline-none"
-                              />
-                            </div>
-                            <div className="col-span-2 space-y-2">
-                              <label className="block text-sm font-medium text-violet-700">
-                                Judul Cover Induk
-                              </label>
-                              <input
-                                type="text"
-                                value={formInfo.coverIndukJudul}
-                                onChange={(e) =>
-                                  handleFieldChange("coverIndukJudul", e.target.value)
-                                }
-                                placeholder=""
-                                className="w-full rounded-xl border border-violet-200 px-4 py-3 text-base focus:border-violet-400 focus:ring-1 focus:ring-violet-400 focus:outline-none"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
 
                     {/* Lampiran CALK section */}
                     {formInfo.isCalk && (
@@ -1298,40 +1519,308 @@ export default function UploadLampiranUtamaModal({
                     )}
                   </div>
                 )}
+
+                {/* ── TAB HEADER & TTD ── */}
+                {activeTab === ("headerttd" as any) && (
+                  <div className="space-y-6">
+                    {/* Toggle aktifkan */}
+                    <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-5">
+                      <label className="flex cursor-pointer items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={formInfo.headerTtd.enabled}
+                          onChange={(e) =>
+                            handleFieldChange("headerTtd", {
+                              ...formInfo.headerTtd,
+                              enabled: e.target.checked,
+                            })
+                          }
+                          className="h-5 w-5 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                        />
+                        <div>
+                          <span className="text-base font-medium text-gray-800">
+                            Aktifkan Header & Tanda Tangan
+                          </span>
+                          <p className="text-sm text-gray-500">
+                            Header di pojok kanan atas hal. pertama + TTD di pojok kanan bawah hal. terakhir. Bersifat overlay — menimpa konten lama.
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+
+                    {formInfo.headerTtd.enabled && (
+                      <>
+                        {/* ── ISI HEADER ── */}
+                        <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
+                          <h3 className="text-sm font-semibold text-gray-700">Isi Header</h3>
+                          <div className="rounded-lg bg-gray-50 p-3 font-mono text-xs text-gray-600 leading-relaxed">
+                            <div>Lampiran {formInfo.romanPage}&nbsp;&nbsp;:&nbsp;&nbsp;{toTitleCase(LABEL_JENIS_MAP[jenisLaporan])} {toTitleCase(namaDaerah)}</div>
+                            <div>Nomor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;{formInfo.headerTtd.nomor || "....."}</div>
+                            <div>Tanggal&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:&nbsp;&nbsp;{formInfo.headerTtd.tanggal || "....."}</div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="block text-sm font-medium text-gray-700">Nomor</label>
+                              <input
+                                type="text"
+                                value={formInfo.headerTtd.nomor}
+                                onChange={(e) =>
+                                  handleFieldChange("headerTtd", {
+                                    ...formInfo.headerTtd,
+                                    nomor: e.target.value,
+                                  })
+                                }
+                                placeholder="Kosongkan jika belum ada"
+                                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 focus:outline-none"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="block text-sm font-medium text-gray-700">Tanggal</label>
+                              <input
+                                type="text"
+                                value={formInfo.headerTtd.tanggal}
+                                onChange={(e) =>
+                                  handleFieldChange("headerTtd", {
+                                    ...formInfo.headerTtd,
+                                    tanggal: e.target.value,
+                                  })
+                                }
+                                placeholder="Contoh: 9 Juli 2026"
+                                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ── POSISI & UKURAN HEADER ── */}
+                        <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
+                          <h3 className="text-sm font-semibold text-gray-700">Posisi Header (hal. pertama)</h3>
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="block text-xs font-medium text-gray-600">Jarak dari kanan (pt)</label>
+                              <input
+                                type="number"
+                                value={formInfo.headerTtd.header.marginRight}
+                                onChange={(e) =>
+                                  handleFieldChange("headerTtd", {
+                                    ...formInfo.headerTtd,
+                                    header: { ...formInfo.headerTtd.header, marginRight: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-violet-400 focus:outline-none"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="block text-xs font-medium text-gray-600">Jarak dari atas (pt)</label>
+                              <input
+                                type="number"
+                                value={formInfo.headerTtd.header.marginTop}
+                                onChange={(e) =>
+                                  handleFieldChange("headerTtd", {
+                                    ...formInfo.headerTtd,
+                                    header: { ...formInfo.headerTtd.header, marginTop: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-violet-400 focus:outline-none"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="block text-xs font-medium text-gray-600">Ukuran font (pt)</label>
+                              <input
+                                type="number"
+                                value={formInfo.headerTtd.header.fontSize}
+                                onChange={(e) =>
+                                  handleFieldChange("headerTtd", {
+                                    ...formInfo.headerTtd,
+                                    header: { ...formInfo.headerTtd.header, fontSize: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-violet-400 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ── POSISI & UKURAN TTD ── */}
+                        <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
+                          <h3 className="text-sm font-semibold text-gray-700">Posisi Tanda Tangan (hal. terakhir)</h3>
+                          <div className="rounded-lg bg-gray-50 p-3 font-mono text-xs text-gray-600 leading-relaxed text-center">
+                            <div className="font-bold">BUPATI {namaDaerah.toUpperCase()}</div>
+                            <div className="my-4 text-gray-300">[ ruang TTD ]</div>
+                            <div className="font-bold">{namaKepalaDaerah.toUpperCase()}</div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="block text-xs font-medium text-gray-600">Jarak dari kanan (pt)</label>
+                              <input
+                                type="number"
+                                value={formInfo.headerTtd.ttd.marginRight}
+                                onChange={(e) =>
+                                  handleFieldChange("headerTtd", {
+                                    ...formInfo.headerTtd,
+                                    ttd: { ...formInfo.headerTtd.ttd, marginRight: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-violet-400 focus:outline-none"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="block text-xs font-medium text-gray-600">Jarak dari bawah (pt)</label>
+                              <input
+                                type="number"
+                                value={formInfo.headerTtd.ttd.marginBottom}
+                                onChange={(e) =>
+                                  handleFieldChange("headerTtd", {
+                                    ...formInfo.headerTtd,
+                                    ttd: { ...formInfo.headerTtd.ttd, marginBottom: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-violet-400 focus:outline-none"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="block text-xs font-medium text-gray-600">Ukuran font (pt)</label>
+                              <input
+                                type="number"
+                                value={formInfo.headerTtd.ttd.fontSize}
+                                onChange={(e) =>
+                                  handleFieldChange("headerTtd", {
+                                    ...formInfo.headerTtd,
+                                    ttd: { ...formInfo.headerTtd.ttd, fontSize: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-violet-400 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
+            </div>
+          )}
+
+          {/* DRAG DIVIDER */}
+          {!isPreviewFocus && (
+            <div
+              onMouseDown={() => setIsDragging(true)}
+              className={`group relative z-10 flex w-2 flex-shrink-0 cursor-col-resize items-center justify-center bg-gray-100 transition-colors hover:bg-indigo-200 ${isDragging ? "bg-indigo-300" : ""}`}
+            >
+              <div className={`h-12 w-1 rounded-full transition-colors ${isDragging ? "bg-indigo-500" : "bg-gray-300 group-hover:bg-indigo-400"}`} />
             </div>
           )}
 
           {/* RIGHT PANEL */}
           <div
-            className={`flex flex-1 flex-col overflow-hidden bg-gradient-to-br from-gray-50 to-white transition-all duration-500 ${isPreviewFocus ? "w-full" : "lg:w-2/5"}`}
+            className={`flex flex-col overflow-hidden bg-gradient-to-br from-gray-50 to-white transition-colors duration-200 ${isDragging ? "select-none" : ""}`}
+            style={{ flex: 1 }}
           >
-            {previewUrl ? (
+            {/* Saat tab headerttd: tampilkan preview hasil header+TTD */}
+            {(activeTab as string) === "headerttd" ? (
+              <>
+                <div className="flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    {isGeneratingPreview ? (
+                      <div className="h-2 w-2 animate-ping rounded-full bg-violet-400" />
+                    ) : (
+                      <div className="h-2 w-2 rounded-full bg-violet-500" />
+                    )}
+                    <span className="text-sm font-medium text-gray-600">
+                      {isGeneratingPreview ? "Memperbarui preview..." : "Preview Header & TTD"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={generateHeaderTtdPreview}
+                    disabled={isGeneratingPreview || !previewUrl}
+                    className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-violet-700 disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                    Refresh
+                  </button>
+                  {headerTtdPreviewUrl && (
+                    <button
+                      onClick={() => window.open(headerTtdPreviewUrl, "_blank")}
+                      title="Buka fullscreen di tab baru"
+                      className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 shadow-sm transition hover:bg-gray-50"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                      </svg>
+                      Fullscreen
+                    </button>
+                  )}
+                </div>
+                <div className="flex-1 overflow-hidden bg-gray-200 p-2">
+                  {headerTtdPreviewUrl ? (
+                    <iframe
+                      src={headerTtdPreviewUrl}
+                      className="h-full w-full rounded-lg bg-white shadow-inner"
+                      title="Preview Header & TTD"
+                    />
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center gap-3 text-gray-400">
+                      <svg className="h-12 w-12 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178Z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                      </svg>
+                      <p className="text-sm">
+                        {!previewUrl
+                          ? "Upload file PDF terlebih dahulu"
+                          : !formInfo.headerTtd.enabled
+                            ? "Aktifkan Header & TTD untuk melihat preview"
+                            : "Preview akan muncul otomatis..."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : previewUrl ? (
               <>
                 <div
                   className={`flex items-center justify-between border-b border-gray-100 px-6 py-4 ${isPreviewFocus ? "bg-indigo-50/50" : "bg-white"}`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+                    {isGeneratingFooterPreview ? (
+                      <div className="h-2 w-2 animate-ping rounded-full bg-amber-400" />
+                    ) : (
+                      <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+                    )}
                     <span className="text-sm font-medium text-gray-600">
                       Preview Dokumen
                     </span>
                   </div>
-                  <button
-                    onClick={() => setIsPreviewFocus(!isPreviewFocus)}
-                    className="group flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-md hover:shadow-lg"
-                  >
-                    {isPreviewFocus ? (
-                      <>
-                        <ChevronDownIcon className="h-4 w-4" /> Kembali ke
-                        Layout
-                      </>
-                    ) : (
-                      <>
-                        <ChevronUpIcon className="h-4 w-4" /> Fokus Preview
-                      </>
+                  <div className="flex items-center gap-2">
+                    {previewUrl && (
+                      <button
+                        onClick={() => window.open(previewUrl, "_blank")}
+                        title="Buka fullscreen di tab baru"
+                        className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 shadow-sm transition hover:bg-gray-50"
+                      >
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                        </svg>
+                        Fullscreen
+                      </button>
                     )}
-                  </button>
+                    <button
+                      onClick={() => setIsPreviewFocus(!isPreviewFocus)}
+                      className="group flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2 text-sm font-semibold text-white shadow-md hover:shadow-lg"
+                    >
+                      {isPreviewFocus ? (
+                        <>
+                          <ChevronDownIcon className="h-4 w-4" /> Kembali ke Layout
+                        </>
+                      ) : (
+                        <>
+                          <ChevronUpIcon className="h-4 w-4" /> Fokus Preview
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <div className="flex-1 overflow-hidden bg-gray-100 p-2">
                   <iframe

@@ -32,6 +32,22 @@ export interface FooterConfig {
   fontSize: number;
 }
 
+export interface HeaderTtdConfig {
+  enabled: boolean;
+  nomor: string;
+  tanggal: string;
+  header: {
+    fontSize: number;
+    marginRight: number;
+    marginTop: number;
+  };
+  ttd: {
+    fontSize: number;
+    marginRight: number;
+    marginBottom: number;
+  };
+}
+
 export interface SubbabCalk {
   id: string;
   subbab: string;
@@ -93,10 +109,9 @@ export interface LampiranUtama {
   jumlahTotalLembar: number;
   isCALK: boolean;
   babs: BabCalk[];
-  /** Jika true, entri ini adalah cover induk opsional (misal LAMPIRAN I)
-   *  yang diletakkan sebelum sub-lampiran (LAMPIRAN I.1, I.2, dst).
-   *  Cover induk TIDAK diberi nomor halaman footer dan tidak muncul di daftar isi. */
   isCoverInduk?: boolean;
+  /** Konfigurasi header pojok kanan atas + TTD pojok kanan bawah */
+  headerTtd?: HeaderTtdConfig;
 }
 
 export interface DokumenLaporan {
@@ -107,6 +122,10 @@ export interface DokumenLaporan {
   tanggalPengesahan: string | null;
   status: StatusDokumenLaporan;
   batangTubuh: string | null;
+  /** Nama kabupaten/kota, misal "KENDAL" */
+  namaDaerah: string;
+  /** Nama kepala daerah, misal "DYAH KARTIKA PERMANASARI" */
+  namaKepalaDaerah: string;
   lampirans: LampiranUtama[];
   lampiransPendukung: LampiranPendukung[];
   createdAt: string;

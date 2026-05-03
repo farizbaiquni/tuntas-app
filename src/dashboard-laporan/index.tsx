@@ -25,6 +25,8 @@ const initialDokumen: DokumenLaporan = {
   tanggalPengesahan: null,
   status: StatusDokumenLaporan.BELUM_DIBUAT,
   batangTubuh: null,
+  namaDaerah: "KENDAL",
+  namaKepalaDaerah: "DYAH KARTIKA PERMANASARI",
   lampirans: [],
   lampiransPendukung: [],
   createdAt: new Date().toISOString(),
@@ -81,6 +83,16 @@ export default function Dashboard() {
 
   const handleStatusChange = useCallback(
     (status: StatusDokumenLaporan) => updateDokumen("status", status),
+    [updateDokumen],
+  );
+
+  const handleNamaDaerahChange = useCallback(
+    (nama: string) => updateDokumen("namaDaerah", nama),
+    [updateDokumen],
+  );
+
+  const handleNamaKepalaDaerahChange = useCallback(
+    (nama: string) => updateDokumen("namaKepalaDaerah", nama),
     [updateDokumen],
   );
 
@@ -236,6 +248,8 @@ export default function Dashboard() {
                   onNomorChange={handleNomorChange}
                   onTanggalPengesahanChange={handleTanggalPengesahanChange}
                   onStatusChange={handleStatusChange}
+                  onNamaDaerahChange={handleNamaDaerahChange}
+                  onNamaKepalaDaerahChange={handleNamaKepalaDaerahChange}
                 />
               );
 
@@ -255,6 +269,8 @@ export default function Dashboard() {
                   jenisLaporan={dokumen.jenisLaporan}
                   tahun={dokumen.tahun}
                   nomor={dokumen.nomor}
+                  namaDaerah={dokumen.namaDaerah}
+                  namaKepalaDaerah={dokumen.namaKepalaDaerah}
                   onAdd={handleAddLampiranUtama}
                   onUpdate={handleUpdateLampiranUtama}
                   onRemove={handleRemoveLampiranUtama}

@@ -16,6 +16,8 @@ interface InformasiUmumProps {
   onNomorChange: (nomor: number | null) => void;
   onTanggalPengesahanChange: (tanggal: string | null) => void;
   onStatusChange: (status: StatusDokumenLaporan) => void;
+  onNamaDaerahChange: (nama: string) => void;
+  onNamaKepalaDaerahChange: (nama: string) => void;
 }
 
 // ─── Static Data ──────────────────────────────────────────────────────────────
@@ -222,6 +224,8 @@ export default function InformasiUmumContent({
   onNomorChange,
   onTanggalPengesahanChange,
   onStatusChange,
+  onNamaDaerahChange,
+  onNamaKepalaDaerahChange,
 }: InformasiUmumProps) {
   // Rule 5.10: Lazy state initialization — function form so the initial string conversion
   // only runs once on mount.
@@ -621,6 +625,47 @@ export default function InformasiUmumContent({
                     </p>
                   )}
               </div>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ── IDENTITAS DAERAH ── */}
+        <SectionCard
+          accent="violet"
+          title="Identitas Daerah"
+          subtitle="Digunakan pada header dan tanda tangan lampiran"
+          icon={
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75Z"/>
+            </svg>
+          }
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Nama Daerah
+              </label>
+              <input
+                type="text"
+                value={dokumen.namaDaerah}
+                onChange={(e) => onNamaDaerahChange(e.target.value.toUpperCase())}
+                placeholder="KENDAL"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-base uppercase focus:border-violet-400 focus:ring-1 focus:ring-violet-400 focus:outline-none"
+              />
+              <p className="text-xs text-gray-400">Contoh: KENDAL</p>
+            </div>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Nama Kepala Daerah
+              </label>
+              <input
+                type="text"
+                value={dokumen.namaKepalaDaerah}
+                onChange={(e) => onNamaKepalaDaerahChange(e.target.value.toUpperCase())}
+                placeholder="DYAH KARTIKA PERMANASARI"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-base uppercase focus:border-violet-400 focus:ring-1 focus:ring-violet-400 focus:outline-none"
+              />
+              <p className="text-xs text-gray-400">Contoh: DYAH KARTIKA PERMANASARI</p>
             </div>
           </div>
         </SectionCard>
